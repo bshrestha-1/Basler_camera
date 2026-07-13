@@ -12,10 +12,10 @@ from pathlib import Path
 import typer
 import yaml
 
-from glas.config import deep_merge, read_yaml_file, validate_json
-from glas.exceptions import ConfigurationError, JSONValidationError, SettingsError
+from glas.config import deep_merge, read_yaml_file
+from glas.exceptions import ConfigurationError, JSONValidationError
 from glas.logger import configure_logging, get_logger
-from glas.settings import CONFIG_SCHEMA, DEFAULT_CONFIG, Settings
+from glas.settings import DEFAULT_CONFIG, Settings
 from glas.version import __version__
 
 app = typer.Typer(
@@ -77,9 +77,8 @@ def config_validate(
     try:
         file_data = read_yaml_file(path)
         merged = deep_merge(DEFAULT_CONFIG, file_data)
-        validate_json(merged, CONFIG_SCHEMA)
         Settings.from_dict(merged)
-    except (ConfigurationError, JSONValidationError, SettingsError) as exc:
+    except (ConfigurationError, JSONValidationError) as exc:
         typer.echo(f"Invalid configuration: {exc}", err=True)
         if isinstance(exc, JSONValidationError):
             for error in exc.errors:

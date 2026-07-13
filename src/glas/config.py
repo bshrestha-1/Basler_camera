@@ -1,10 +1,10 @@
-"""Generic configuration file loading, merging, and JSON Schema validation.
+"""Generic configuration file loading and merging.
 
-This module is domain-agnostic: it knows how to locate, read, merge, and
-validate YAML configuration files, but has no knowledge of what GLAS's
-specific settings should look like. See :mod:`glas.settings` for the
-GLAS-specific schema and the typed :class:`~glas.settings.Settings` object
-built on top of this module.
+This module is domain-agnostic: it knows how to locate, read, and merge
+YAML configuration files, but has no knowledge of what GLAS's specific
+settings should look like or how they should be validated. See
+:mod:`glas.settings` for the GLAS-specific, Pydantic-validated
+:class:`~glas.settings.Settings` object built on top of this module.
 """
 
 from __future__ import annotations
@@ -15,9 +15,8 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from jsonschema import Draft202012Validator
 
-from glas.exceptions import ConfigurationError, JSONValidationError
+from glas.exceptions import ConfigurationError
 
 
 def read_yaml_file(path: Path) -> dict[str, Any]:
@@ -87,35 +86,6 @@ def deep_merge(base: Mapping[str, Any], override: Mapping[str, Any]) -> dict[str
     return merged
 
 
-def validate_json(instance: Any, schema: Mapping[str, Any]) -> None:
-    """Validate ``instance`` against a JSON Schema.
-
-    Parameters
-    ----------
-    instance : Any
-        The data to validate (typically a dict loaded from YAML or JSON).
-    schema : Mapping
-        A JSON Schema (draft 2020-12) describing the expected structure.
-
-    Raises
-    ------
-    JSONValidationError
-        If ``instance`` violates the schema. All violations are collected
-        into :attr:`~glas.exceptions.JSONValidationError.errors`.
-    """
-    validator = Draft202012Validator(schema)
-    errors = sorted(validator.iter_errors(instance), key=lambda e: [str(p) for p in e.path])
-    if errors:
-        messages = [
-            f"{'.'.join(str(p) for p in error.path) or '<root>'}: {error.message}"
-            for error in errors
-        ]
-        raise JSONValidationError(
-            f"Configuration failed schema validation with {len(messages)} error(s).",
-            errors=messages,
-        )
-
-
 def find_config_file(
     explicit_path: Path | None = None,
     env_var: str = "GLAS_CONFIG",
@@ -167,7 +137,6 @@ def find_config_file(
 
 def load_config(
     defaults: Mapping[str, Any],
-    schema: Mapping[str, Any] | None = None,
     explicit_path: Path | None = None,
     env_var: str = "GLAS_CONFIG",
     search_paths: Sequence[Path] = (),
@@ -176,15 +145,14 @@ def load_config(
 
     If no configuration file is found via :func:`find_config_file`, the
     defaults are returned unchanged. If a file is found, its contents are
-    deep-merged over ``defaults`` and the merged result is validated
-    against ``schema`` (if provided).
+    deep-merged over ``defaults``. This function does not validate the
+    result -- construct a Pydantic model (e.g.
+    :class:`glas.settings.Settings`) from the returned dict to validate it.
 
     Parameters
     ----------
     defaults : Mapping
         Default configuration values.
-    schema : Mapping, optional
-        JSON Schema to validate the merged configuration against.
     explicit_path : pathlib.Path, optional
         Explicit configuration file path, e.g. from a CLI flag.
     env_var : str, default "GLAS_CONFIG"
@@ -195,25 +163,19 @@ def load_config(
     Returns
     -------
     dict
-        The merged (and validated) configuration.
+        The merged configuration.
 
     Raises
     ------
     ConfigurationError
         If a configuration file is specified or found but cannot be read.
-    JSONValidationError
-        If the merged configuration violates ``schema``.
     """
     config_path = find_config_file(
         explicit_path=explicit_path, env_var=env_var, search_paths=search_paths
     )
 
-    merged = dict(defaults)
-    if config_path is not None:
-        file_data = read_yaml_file(config_path)
-        merged = deep_merge(defaults, file_data)
+    if config_path is None:
+        return dict(defaults)
 
-    if schema is not None:
-        validate_json(merged, schema)
-
-    return merged
+    file_data = read_yaml_file(config_path)
+    return deep_merge(defaults, file_data)

@@ -1,19 +1,19 @@
 """GLAS-specific application settings.
 
-Defines the default configuration, its JSON Schema, and a typed
+Defines the default configuration and a typed, Pydantic-validated
 :class:`Settings` object that the rest of GLAS depends on instead of
 passing raw dictionaries around.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from glas.config import load_config
-from glas.exceptions import SettingsError
+from glas.exceptions import JSONValidationError, SettingsError
 
 DEFAULT_DATA_DIR = Path.home() / "glas_data"
 
@@ -31,46 +31,43 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
 }
 
-CONFIG_SCHEMA: dict[str, Any] = {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "title": "GLAS configuration",
-    "type": "object",
-    "required": ["paths", "logging"],
-    "additionalProperties": True,
-    "properties": {
-        "paths": {
-            "type": "object",
-            "required": ["data_dir", "log_dir"],
-            "properties": {
-                "data_dir": {"type": "string", "minLength": 1},
-                "log_dir": {"type": "string", "minLength": 1},
-            },
-        },
-        "logging": {
-            "type": "object",
-            "required": ["level", "file", "max_bytes", "backup_count", "console"],
-            "properties": {
-                "level": {
-                    "type": "string",
-                    "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-                },
-                "file": {"type": "string", "minLength": 1},
-                "max_bytes": {"type": "integer", "minimum": 1024},
-                "backup_count": {"type": "integer", "minimum": 0},
-                "console": {"type": "boolean"},
-            },
-        },
-    },
-}
-
 DEFAULT_SEARCH_PATHS: tuple[Path, ...] = (
     Path.cwd() / "glas.yaml",
     Path.home() / ".config" / "glas" / "config.yaml",
 )
 
 
-@dataclass(frozen=True)
-class Settings:
+class _PathsConfig(BaseModel):
+    """The ``paths`` section of a GLAS configuration file."""
+
+    model_config = ConfigDict(frozen=True)
+
+    data_dir: str = Field(min_length=1)
+    log_dir: str = Field(min_length=1)
+
+
+class _LoggingConfig(BaseModel):
+    """The ``logging`` section of a GLAS configuration file."""
+
+    model_config = ConfigDict(frozen=True)
+
+    level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+    file: str = Field(min_length=1)
+    max_bytes: int = Field(ge=1024)
+    backup_count: int = Field(ge=0)
+    console: bool
+
+
+class _RawConfig(BaseModel):
+    """The full, nested shape of a GLAS configuration file, as validated on load."""
+
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    paths: _PathsConfig
+    logging: _LoggingConfig
+
+
+class Settings(BaseModel):
     """Typed, validated GLAS application settings.
 
     Attributes
@@ -91,6 +88,8 @@ class Settings:
         Whether logging also writes to standard error.
     """
 
+    model_config = ConfigDict(frozen=True)
+
     data_dir: Path
     log_dir: Path
     log_level: str
@@ -100,13 +99,15 @@ class Settings:
     log_console: bool
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> Settings:
-        """Build a :class:`Settings` instance from a validated config dict.
+    def from_dict(cls, data: dict[str, Any]) -> Settings:
+        """Build validated :class:`Settings` from a raw (nested) config dict.
 
         Parameters
         ----------
-        data : Mapping
-            Configuration data matching :data:`CONFIG_SCHEMA`.
+        data : dict
+            Configuration data with ``paths`` and ``logging`` sections,
+            as produced by merging :data:`DEFAULT_CONFIG` with a loaded
+            configuration file.
 
         Returns
         -------
@@ -114,23 +115,23 @@ class Settings:
 
         Raises
         ------
-        SettingsError
-            If expected keys are missing from ``data``.
+        JSONValidationError
+            If ``data`` does not match the expected structure.
         """
         try:
-            paths = data["paths"]
-            logging_cfg = data["logging"]
-            return cls(
-                data_dir=Path(paths["data_dir"]).expanduser(),
-                log_dir=Path(paths["log_dir"]).expanduser(),
-                log_level=logging_cfg["level"],
-                log_file=logging_cfg["file"],
-                log_max_bytes=int(logging_cfg["max_bytes"]),
-                log_backup_count=int(logging_cfg["backup_count"]),
-                log_console=bool(logging_cfg["console"]),
-            )
-        except KeyError as exc:
-            raise SettingsError(f"Missing required configuration key: {exc}") from exc
+            raw = _RawConfig.model_validate(data)
+        except ValidationError as exc:
+            raise JSONValidationError.from_pydantic(exc, context="Settings") from exc
+
+        return cls(
+            data_dir=Path(raw.paths.data_dir).expanduser(),
+            log_dir=Path(raw.paths.log_dir).expanduser(),
+            log_level=raw.logging.level,
+            log_file=raw.logging.file,
+            log_max_bytes=raw.logging.max_bytes,
+            log_backup_count=raw.logging.backup_count,
+            log_console=raw.logging.console,
+        )
 
     @classmethod
     def load(cls, config_path: Path | None = None) -> Settings:
@@ -150,13 +151,22 @@ class Settings:
         """
         merged = load_config(
             defaults=DEFAULT_CONFIG,
-            schema=CONFIG_SCHEMA,
             explicit_path=config_path,
             search_paths=DEFAULT_SEARCH_PATHS,
         )
         return cls.from_dict(merged)
 
     def ensure_directories(self) -> None:
-        """Create :attr:`data_dir` and :attr:`log_dir` if they do not exist."""
-        self.data_dir.mkdir(parents=True, exist_ok=True)
-        self.log_dir.mkdir(parents=True, exist_ok=True)
+        """Create :attr:`data_dir` and :attr:`log_dir` if they do not exist.
+
+        Raises
+        ------
+        SettingsError
+            If either directory cannot be created (e.g. a permissions
+            error).
+        """
+        try:
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+            self.log_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise SettingsError(f"Could not create settings directories: {exc}") from exc

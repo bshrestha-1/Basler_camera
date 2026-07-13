@@ -10,8 +10,8 @@ from __future__ import annotations
 
 __all__ = ["__version__", "VERSION_INFO"]
 
-__version__: str = "0.1.0"
+__version__: str = "0.6.0"
 """Current GLAS release version (semantic versioning: MAJOR.MINOR.PATCH)."""
 
-VERSION_INFO: tuple[int, int, int] = (0, 1, 0)
+VERSION_INFO: tuple[int, int, int] = (0, 6, 0)
 """``__version__`` as a ``(major, minor, patch)`` tuple for programmatic use."""

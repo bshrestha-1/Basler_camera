@@ -1,8 +1,11 @@
 """Centralized logging configuration for GLAS.
 
 GLAS uses the standard library :mod:`logging` module. This module wires up
-a console handler and an optional rotating file handler with a consistent
-formatter, and hands out module-level loggers via :func:`get_logger`.
+a Rich-formatted console handler and an optional plain-text rotating file
+handler, and hands out module-level loggers via :func:`get_logger`. Only
+the console gets Rich's colored, structured formatting -- file logs stay
+plain text, since ANSI styling is noise once a log file is opened in an
+editor, grepped, or shipped off for later analysis.
 
 Examples
 --------
@@ -16,13 +19,16 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
-import sys
 from pathlib import Path
+
+from rich.console import Console
+from rich.logging import RichHandler
 
 from glas.exceptions import LoggingError
 
 _ROOT_LOGGER_NAME = "glas"
-_LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
+_FILE_LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
+_CONSOLE_LOG_FORMAT = "%(name)s | %(message)s"
 _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 _configured = False
@@ -77,11 +83,15 @@ def configure_logging(
         root_logger.removeHandler(handler)
         handler.close()
 
-    formatter = logging.Formatter(fmt=_LOG_FORMAT, datefmt=_DATE_FORMAT)
-
     if console:
-        console_handler = logging.StreamHandler(stream=sys.stderr)
-        console_handler.setFormatter(formatter)
+        console_handler = RichHandler(
+            console=Console(stderr=True),
+            show_path=False,
+            markup=False,
+            rich_tracebacks=True,
+            log_time_format=_DATE_FORMAT,
+        )
+        console_handler.setFormatter(logging.Formatter(fmt=_CONSOLE_LOG_FORMAT))
         root_logger.addHandler(console_handler)
 
     if log_dir is not None:
@@ -96,7 +106,7 @@ def configure_logging(
             backupCount=backup_count,
             encoding="utf-8",
         )
-        file_handler.setFormatter(formatter)
+        file_handler.setFormatter(logging.Formatter(fmt=_FILE_LOG_FORMAT, datefmt=_DATE_FORMAT))
         root_logger.addHandler(file_handler)
 
     _configured = True
