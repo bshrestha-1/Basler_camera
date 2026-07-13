@@ -1,0 +1,80 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "glas"
+version = "0.1.0"
+description = "GLAS: Granular Lab Acquisition System -- acquisition and analysis platform for a Basler ace acA640-750um camera used in granular-material physics research."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+    { name = "GLAS Project Contributors" },
+]
+keywords = ["basler", "camera", "granular-materials", "physics", "acquisition"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    "pyyaml>=6.0",
+    "jsonschema>=4.18",
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "types-PyYAML",
+    "types-jsonschema",
+]
+
+[project.urls]
+Homepage = "https://github.com/bshrestha-1/basler_camera"
+Changelog = "https://github.com/bshrestha-1/basler_camera/blob/main/CHANGELOG.md"
+
+[project.scripts]
+glas = "glas.cli:run"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+glas = ["py.typed"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["src/glas"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "N"]
+
+[tool.ruff.lint.per-file-ignores]
+# Typer requires typer.Option(...)/typer.Argument(...) calls as argument
+# defaults; that is the documented, required usage pattern, not a bug.
+"src/glas/cli.py" = ["B008"]
+
+[tool.mypy]
+python_version = "3.10"
+packages = ["glas"]
+mypy_path = "src"
+strict = true
