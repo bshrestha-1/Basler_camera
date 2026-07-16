@@ -5,17 +5,36 @@ from __future__ import annotations
 import pytest
 
 from glas.exceptions import (
+    BrazilNutError,
     ConfigurationError,
+    ConvectionError,
+    DisplayError,
+    ExperimentNotFoundError,
+    ExportError,
     GLASError,
     JSONValidationError,
     LoggingError,
+    PackingError,
+    SegregationError,
     SettingsError,
 )
 
 
 @pytest.mark.parametrize(
     "exc_type",
-    [ConfigurationError, JSONValidationError, SettingsError, LoggingError],
+    [
+        ConfigurationError,
+        JSONValidationError,
+        SettingsError,
+        LoggingError,
+        DisplayError,
+        ExportError,
+        ExperimentNotFoundError,
+        BrazilNutError,
+        ConvectionError,
+        PackingError,
+        SegregationError,
+    ],
 )
 def test_all_exceptions_inherit_from_glaserror(exc_type: type[Exception]) -> None:
     assert issubclass(exc_type, GLASError)

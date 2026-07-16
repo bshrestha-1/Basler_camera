@@ -141,3 +141,31 @@ class WriterError(DatasetError):
 
 class RecorderError(GLASError):
     """Raised when a recording session or its controller is used in an invalid state."""
+
+
+class DisplayError(GLASError):
+    """Raised when a live preview window cannot be shown (e.g. no display available)."""
+
+
+class ExportError(GLASError):
+    """Raised when exporting a dataset to an image sequence or video fails."""
+
+
+class ExperimentNotFoundError(GLASError):
+    """Raised when an :class:`~glas.experiment.ExperimentManager` lookup finds nothing."""
+
+
+class BrazilNutError(GLASError):
+    """Raised when Brazil nut (intruder) analysis cannot be performed."""
+
+
+class ConvectionError(GLASError):
+    """Raised when convection (optical flow) analysis cannot be performed."""
+
+
+class PackingError(GLASError):
+    """Raised when packing fraction analysis cannot be performed."""
+
+
+class SegregationError(GLASError):
+    """Raised when segregation analysis cannot be performed."""

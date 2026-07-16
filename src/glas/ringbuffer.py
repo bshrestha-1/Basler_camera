@@ -1,10 +1,20 @@
 """A fixed-capacity, drop-oldest ring buffer for acquired frames.
 
 Sits between the producer thread (:mod:`glas.acquisition`) and any
-consumer (a dataset writer in Phase 4, a live preview in Phase 6): the
-producer pushes frames as fast as the camera delivers them and must never
-block, so a full buffer silently drops its oldest frame to make room for
-the newest one, the same way a real-time video ring buffer behaves.
+consumer -- a dataset writer (:mod:`glas.writer`), a live preview
+(:mod:`glas.preview`): the producer pushes frames as fast as the camera
+delivers them and must never block, so a full buffer silently drops its
+oldest frame to make room for the newest one, the same way a real-time
+video ring buffer behaves.
+
+Two different kinds of consumer read from the same buffer without
+interfering with each other: :meth:`RingBuffer.pop` (destructive, ordered
+-- a dataset writer needs every frame) and :meth:`RingBuffer.peek`
+(non-destructive, latest-only -- a live preview only ever wants "the
+freshest frame available" and must never compete with a writer for
+frames). A preview attached via :meth:`peek` to a buffer that's also
+being recorded can never cause a dropped or delayed recording frame,
+since it never removes anything.
 
 Design notes
 ------------
@@ -166,6 +176,32 @@ class RingBuffer:
                 continue
             if not self._not_empty.wait(timeout=remaining):
                 return None
+
+    def peek(self) -> Frame | None:
+        """Return the most recently pushed frame, without removing it.
+
+        Never blocks and never competes with :meth:`push`/:meth:`pop` for
+        frames -- intended for non-destructive consumers, like a live
+        preview, that only care about "the freshest frame available" and
+        must never take a frame a :meth:`pop`-based consumer (like a
+        dataset writer) still needs. Safe to call concurrently with
+        :meth:`push`/:meth:`pop` from other threads: reading the
+        rightmost item of a ``deque`` is a single, GIL-atomic operation,
+        so this can only ever return the newest frame at some instant
+        during the call, never a torn or corrupted value -- the same
+        tolerance for small, benign races as :meth:`push` (see the module
+        docstring).
+
+        Returns
+        -------
+        Frame or None
+            The newest buffered frame, or ``None`` if the buffer is
+            currently empty.
+        """
+        try:
+            return self._buffer[-1]
+        except IndexError:
+            return None
 
     def clear(self) -> None:
         """Discard all currently buffered frames without counting them as dropped."""

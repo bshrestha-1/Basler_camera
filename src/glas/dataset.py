@@ -20,13 +20,15 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
+import numpy as np
 from pydantic import BaseModel, ConfigDict
 
 from glas.exceptions import DatasetError, DatasetFormatError, DatasetIOError, JSONValidationError
-from glas.frame import Frame
+from glas.frame import Frame, pixel_format_dtype
 from glas.logger import get_logger
 from glas.metadata import DatasetMetadata, load_metadata_json, save_metadata_json
 
@@ -396,6 +398,109 @@ class Dataset:
 
     def __exit__(self, *exc_info: object) -> None:
         self.finalize()
+
+
+def iter_frames(folder: Path) -> Iterator[Frame]:
+    """Read a finalized dataset's frames back, in the order they were recorded.
+
+    Supports both storage backends :meth:`Dataset.create` can produce.
+    Streams frames one at a time rather than loading the whole dataset
+    into memory, matching :meth:`Dataset.append_frame`'s own
+    never-buffer-more-than-one-frame design on the write side.
+
+    Parameters
+    ----------
+    folder : pathlib.Path
+        A dataset folder previously written by :class:`Dataset`, i.e.
+        containing ``metadata.json`` and either ``frames.h5`` or
+        ``frames.bin`` + ``frames_index.csv``.
+
+    Yields
+    ------
+    Frame
+        One :class:`~glas.frame.Frame` per stored frame.
+
+    Raises
+    ------
+    DatasetError
+        If ``metadata.json`` is missing or invalid.
+    DatasetFormatError
+        If the dataset's recorded format is not ``"hdf5"`` or
+        ``"raw_binary"``, or (for HDF5) ``h5py`` is not installed.
+    DatasetIOError
+        If the expected data file(s) are missing, or (for raw binary)
+        shorter than the frame count implies.
+    """
+    metadata = load_metadata_json(folder / _METADATA_FILENAME)
+    if metadata.frame_count == 0:
+        # Dataset.finalize() never creates a data file for an empty
+        # recording (see its docstring), so there is nothing to open.
+        return
+    if metadata.dataset_format == "hdf5":
+        yield from _iter_hdf5_frames(folder, metadata)
+    elif metadata.dataset_format == "raw_binary":
+        yield from _iter_raw_binary_frames(folder, metadata)
+    else:
+        raise DatasetFormatError(
+            f"Cannot read dataset format {metadata.dataset_format!r}; "
+            "expected 'hdf5' or 'raw_binary'."
+        )
+
+
+def _iter_hdf5_frames(folder: Path, metadata: DatasetMetadata) -> Iterator[Frame]:
+    if h5py is None:
+        raise DatasetFormatError(
+            "h5py is not installed. Install it (`pip install h5py`) to read an 'hdf5' dataset."
+        )
+    path = folder / _HDF5_FILENAME
+    if not path.is_file():
+        raise DatasetIOError(f"{_HDF5_FILENAME} is missing in {folder}.")
+
+    with h5py.File(path, "r") as handle:
+        frames = handle["frames"]
+        frame_ids = handle["frame_ids"]
+        host_timestamps = handle["host_timestamps_ns"]
+        device_timestamps = handle["device_timestamps_ticks"]
+        for index in range(frames.shape[0]):
+            yield Frame(
+                frame_id=int(frame_ids[index]),
+                image=np.array(frames[index]),
+                pixel_format=metadata.pixel_format,
+                host_timestamp_ns=int(host_timestamps[index]),
+                device_timestamp_ticks=int(device_timestamps[index]),
+            )
+
+
+def _iter_raw_binary_frames(folder: Path, metadata: DatasetMetadata) -> Iterator[Frame]:
+    frames_path = folder / _RAW_FRAMES_FILENAME
+    index_path = folder / _RAW_INDEX_FILENAME
+    if not frames_path.is_file():
+        raise DatasetIOError(f"{_RAW_FRAMES_FILENAME} is missing in {folder}.")
+    if not index_path.is_file():
+        raise DatasetIOError(f"{_RAW_INDEX_FILENAME} is missing in {folder}.")
+
+    dtype = pixel_format_dtype(metadata.pixel_format)
+    frame_shape = (metadata.height, metadata.width)
+    frame_nbytes = metadata.height * metadata.width * dtype.itemsize
+
+    with (
+        frames_path.open("rb") as frames_file,
+        index_path.open(newline="", encoding="utf-8") as index_file,
+    ):
+        for row in csv.DictReader(index_file):
+            raw = frames_file.read(frame_nbytes)
+            if len(raw) != frame_nbytes:
+                raise DatasetIOError(
+                    f"{_RAW_FRAMES_FILENAME} ended unexpectedly; the dataset may be truncated."
+                )
+            image = np.frombuffer(raw, dtype=dtype).reshape(frame_shape).copy()
+            yield Frame(
+                frame_id=int(row["frame_id"]),
+                image=image,
+                pixel_format=metadata.pixel_format,
+                host_timestamp_ns=int(row["host_timestamp_ns"]),
+                device_timestamp_ticks=int(row["device_timestamp_ticks"]),
+            )
 
 
 class DatasetValidationResult(BaseModel):

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+import logging.handlers
 from pathlib import Path
 
 import pytest
+from rich.logging import RichHandler
 
 from glas.exceptions import LoggingError
 from glas.logger import configure_logging, get_logger
@@ -27,6 +29,21 @@ def test_configure_logging_is_idempotent() -> None:
     configure_logging(level="INFO", console=True)
     logger = logging.getLogger("glas")
     assert len(logger.handlers) == 1
+
+
+def test_configure_logging_uses_rich_handler_for_console() -> None:
+    configure_logging(level="INFO", console=True)
+    logger = logging.getLogger("glas")
+    assert any(isinstance(handler, RichHandler) for handler in logger.handlers)
+
+
+def test_configure_logging_file_handler_is_not_rich(tmp_path: Path) -> None:
+    configure_logging(level="INFO", log_dir=tmp_path / "logs", console=False)
+    logger = logging.getLogger("glas")
+    assert not any(isinstance(handler, RichHandler) for handler in logger.handlers)
+    assert any(
+        isinstance(handler, logging.handlers.RotatingFileHandler) for handler in logger.handlers
+    )
 
 
 def test_configure_logging_writes_log_file(tmp_path: Path) -> None:

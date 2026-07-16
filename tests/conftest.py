@@ -3,8 +3,18 @@
 from __future__ import annotations
 
 import logging
+import os
 
 import pytest
+
+# Give pypylon's built-in camera emulation transport layer a couple of
+# virtual devices by default, so camera tests exercise real pypylon code
+# paths without needing physical hardware attached. Respects an
+# already-set PYLON_CAMEMU (e.g. a developer testing against real
+# hardware only, with PYLON_CAMEMU unset or 0). Must run before any test
+# module imports pypylon, since the emulation transport layer reads this
+# at first use.
+os.environ.setdefault("PYLON_CAMEMU", "2")
 
 
 @pytest.fixture(autouse=True)

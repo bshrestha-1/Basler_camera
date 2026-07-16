@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "glas"
-version = "0.1.0"
+version = "1.5.0"
 description = "GLAS: Granular Lab Acquisition System -- acquisition and analysis platform for a Basler ace acA640-750um camera used in granular-material physics research."
 readme = "README.md"
 license = { text = "MIT" }
@@ -14,7 +14,7 @@ authors = [
 ]
 keywords = ["basler", "camera", "granular-materials", "physics", "acquisition"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
@@ -25,8 +25,16 @@ classifiers = [
 ]
 dependencies = [
     "pyyaml>=6.0",
-    "jsonschema>=4.18",
+    "pydantic>=2.5",
+    "rich>=13.7",
     "typer>=0.12",
+    "pypylon>=3.0",
+    "numpy>=1.24",
+    "h5py>=3.10",
+    "opencv-python>=4.9",
+    "psutil>=5.9",
+    "pillow>=10.0",
+    "matplotlib>=3.8",
 ]
 
 [project.optional-dependencies]
@@ -36,7 +44,7 @@ dev = [
     "ruff>=0.5",
     "mypy>=1.10",
     "types-PyYAML",
-    "types-jsonschema",
+    "types-psutil",
 ]
 
 [project.urls]
@@ -56,6 +64,10 @@ glas = ["py.typed"]
 minversion = "8.0"
 addopts = "-ra --strict-markers"
 testpaths = ["tests"]
+filterwarnings = [
+    # pypylon's SWIG bindings, not our code.
+    "ignore:builtin type Swig.*has no __module__ attribute:DeprecationWarning",
+]
 
 [tool.coverage.run]
 source = ["src/glas"]
@@ -78,3 +90,13 @@ python_version = "3.10"
 packages = ["glas"]
 mypy_path = "src"
 strict = true
+
+[[tool.mypy.overrides]]
+# pypylon ships no type stubs (no py.typed marker).
+module = "pypylon.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# h5py ships no type stubs (no py.typed marker) in the installed version.
+module = "h5py.*"
+ignore_missing_imports = true

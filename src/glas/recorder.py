@@ -24,6 +24,7 @@ from glas.dataset import Dataset
 from glas.exceptions import RecorderError
 from glas.logger import get_logger
 from glas.metadata import DatasetMetadata
+from glas.ringbuffer import RingBuffer
 from glas.writer import DatasetWriter
 
 logger = get_logger(__name__)
@@ -121,6 +122,17 @@ class Recorder:
     def dataset(self) -> Dataset:
         """The dataset this recorder is writing to."""
         return self._dataset
+
+    @property
+    def buffer(self) -> RingBuffer:
+        """The ring buffer frames are captured into.
+
+        Read from this for a live preview (:mod:`glas.preview`) running
+        alongside this recording -- use :meth:`~glas.ringbuffer.RingBuffer.peek`,
+        never :meth:`~glas.ringbuffer.RingBuffer.pop`, or a preview would
+        steal frames the dataset writer needs.
+        """
+        return self._acquisition.buffer
 
     def start(self) -> None:
         """Begin recording.

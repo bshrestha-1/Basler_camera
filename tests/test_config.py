@@ -11,9 +11,8 @@ from glas.config import (
     find_config_file,
     load_config,
     read_yaml_file,
-    validate_json,
 )
-from glas.exceptions import ConfigurationError, JSONValidationError
+from glas.exceptions import ConfigurationError
 
 
 def test_read_yaml_file_parses_mapping(tmp_path: Path) -> None:
@@ -65,18 +64,6 @@ def test_deep_merge_does_not_mutate_inputs() -> None:
     assert override == {"a": {"x": 2}}
 
 
-def test_validate_json_passes_for_valid_data() -> None:
-    schema = {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}}}
-    validate_json({"name": "acA640-750um"}, schema)
-
-
-def test_validate_json_raises_with_error_details() -> None:
-    schema = {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}}}
-    with pytest.raises(JSONValidationError) as exc_info:
-        validate_json({}, schema)
-    assert exc_info.value.errors
-
-
 def test_find_config_file_prefers_explicit_path(tmp_path: Path) -> None:
     config_file = tmp_path / "explicit.yaml"
     config_file.write_text("a: 1")
@@ -118,11 +105,3 @@ def test_load_config_merges_file_over_defaults(tmp_path: Path) -> None:
     config_file.write_text("a: 2\nb: 3\n")
     result = load_config(defaults={"a": 1}, explicit_path=config_file)
     assert result == {"a": 2, "b": 3}
-
-
-def test_load_config_validates_against_schema(tmp_path: Path) -> None:
-    config_file = tmp_path / "config.yaml"
-    config_file.write_text("a: not_an_int\n")
-    schema = {"type": "object", "properties": {"a": {"type": "integer"}}}
-    with pytest.raises(JSONValidationError):
-        load_config(defaults={"a": 1}, schema=schema, explicit_path=config_file)

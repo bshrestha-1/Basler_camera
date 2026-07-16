@@ -1,7 +1,7 @@
 # Configuration
 
 GLAS is configured through a single YAML file, merged over built-in
-defaults and validated against a JSON Schema before use.
+defaults and validated with [Pydantic v2](https://docs.pydantic.dev/) before use.
 
 ## File resolution order
 
@@ -36,10 +36,12 @@ logging:
   console: true                # also log to stderr
 ```
 
-Validation is performed with [JSON Schema draft 2020-12](https://json-schema.org/draft/2020-12)
-via the `jsonschema` library (`glas.config.validate_json`). Invalid files
-raise `glas.exceptions.JSONValidationError`, which lists every violation
-found, not just the first one.
+Validation is performed by a Pydantic model (`glas.settings.Settings`, built
+from private nested `_PathsConfig`/`_LoggingConfig` models mirroring the file
+structure above). Invalid files raise `glas.exceptions.JSONValidationError`
+(`Settings.from_dict()` translates Pydantic's `ValidationError` into it via
+`JSONValidationError.from_pydantic()`), which lists every violation found,
+not just the first one.
 
 ## CLI commands
 
@@ -71,7 +73,8 @@ print(settings.log_level)
 ## Adding new configuration keys (for future phases)
 
 Later phases (camera settings, acquisition tuning, etc.) will extend
-`DEFAULT_CONFIG` and `CONFIG_SCHEMA` in `glas/settings.py`, and add the
-corresponding typed fields to the `Settings` dataclass. `glas.config`
-itself stays domain-agnostic — it does not need to change to support new
-settings.
+`DEFAULT_CONFIG`, `_PathsConfig`/`_LoggingConfig` (or a new nested model),
+and `Settings` itself in `glas/settings.py`. `glas.config` itself stays
+domain-agnostic and validation-free (`read_yaml_file`, `deep_merge`,
+`find_config_file`, `load_config`) -- it does not need to change to support
+new settings; only the Pydantic models that interpret its output do.

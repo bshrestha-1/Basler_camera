@@ -31,6 +31,13 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
+_MONO_PIXEL_FORMAT_DTYPES: dict[str, np.dtype] = {
+    "Mono8": np.dtype(np.uint8),
+    "Mono10": np.dtype(np.uint16),
+    "Mono12": np.dtype(np.uint16),
+    "Mono16": np.dtype(np.uint16),
+}
+
 
 @dataclass(frozen=True, eq=False)
 class Frame:
@@ -93,3 +100,42 @@ class Frame:
     def nbytes(self) -> int:
         """Size of :attr:`image` in bytes."""
         return int(self.image.nbytes)
+
+
+def pixel_format_dtype(pixel_format: str) -> np.dtype:
+    """Resolve a Basler mono pixel format name to its in-memory numpy dtype.
+
+    Needed to read a :mod:`glas.dataset` raw-binary dataset back into
+    arrays -- unlike HDF5, which records each frame's dtype as part of
+    the file format itself, raw binary storage writes only pixel bytes,
+    so the dtype has to be derived from the pixel format name recorded in
+    ``metadata.json``.
+
+    Only mono pixel formats are supported, matching the target hardware
+    this project is built around (the Basler ace acA640-750um is a mono
+    camera) -- color/Bayer formats are out of scope.
+
+    Parameters
+    ----------
+    pixel_format : str
+        A Basler mono pixel format name, e.g. ``"Mono8"``.
+
+    Returns
+    -------
+    numpy.dtype
+        ``uint8`` for ``"Mono8"``; ``uint16`` for ``"Mono10"``,
+        ``"Mono12"``, and ``"Mono16"`` (the driver delivers all three as
+        16-bit-aligned samples).
+
+    Raises
+    ------
+    ValueError
+        If ``pixel_format`` is not one of the supported mono formats.
+    """
+    try:
+        return _MONO_PIXEL_FORMAT_DTYPES[pixel_format]
+    except KeyError:
+        raise ValueError(
+            f"Unsupported pixel format {pixel_format!r} for raw dtype resolution; "
+            f"expected one of {sorted(_MONO_PIXEL_FORMAT_DTYPES)}."
+        ) from None

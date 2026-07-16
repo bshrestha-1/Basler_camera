@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import signal
 import threading
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +23,7 @@ from glas.camera import Camera
 from glas.camera_info import CameraInfo
 from glas.dataset import Dataset, create_experiment_folder, resolve_dataset_format
 from glas.exceptions import CameraConnectionError, RecorderError
+from glas.experiment import build_experiment_extra
 from glas.logger import get_logger
 from glas.metadata import DatasetMetadata
 from glas.recorder import Recorder, RecorderProgress, RecorderState
@@ -84,6 +85,8 @@ class RecorderController:
     def start_recording(
         self,
         notes: str = "",
+        name: str = "",
+        tags: Sequence[str] | None = None,
         extra: dict[str, Any] | None = None,
         dataset_format: str = "auto",
         buffer_capacity: int = DEFAULT_BUFFER_CAPACITY,
@@ -94,8 +97,16 @@ class RecorderController:
         ----------
         notes : str, default ""
             Free-text operator notes, stored in the dataset metadata.
+        name : str, default ""
+            Human-readable experiment name. Stored in the dataset
+            metadata's ``extra`` field under a reserved key so
+            :class:`~glas.experiment.ExperimentManager` can find this
+            recording by name later; omitted entirely if empty.
+        tags : sequence of str, optional
+            Tags to attach, for the same reason as ``name``.
         extra : dict, optional
-            Additional metadata fields (e.g. experiment name, operator).
+            Additional metadata fields (e.g. operator), merged in
+            alongside ``name``/``tags``.
         dataset_format : {"hdf5", "raw_binary", "auto"}, default "auto"
             Storage backend; see :meth:`glas.dataset.Dataset.create`.
         buffer_capacity : int, default 256
@@ -133,7 +144,7 @@ class RecorderController:
             exposure_time_us=self._camera.exposure_time_us,
             gain_db=self._camera.gain_db,
             notes=notes,
-            extra=extra or {},
+            extra=build_experiment_extra(name=name, tags=tags, extra=extra),
         )
         dataset = Dataset.create(folder, metadata, dataset_format=resolved_format)
 

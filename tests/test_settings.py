@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 from glas.exceptions import JSONValidationError, SettingsError
-from glas.settings import CONFIG_SCHEMA, DEFAULT_CONFIG, Settings
+from glas.settings import DEFAULT_CONFIG, Settings
 
 
 def test_settings_load_uses_defaults_without_config_file(
@@ -51,8 +51,24 @@ def test_settings_load_rejects_invalid_level(tmp_path: Path) -> None:
 
 
 def test_settings_from_dict_missing_key_raises() -> None:
-    with pytest.raises(SettingsError):
+    with pytest.raises(JSONValidationError):
         Settings.from_dict({"paths": {"data_dir": "x"}})
+
+
+def test_settings_from_dict_rejects_empty_string_fields() -> None:
+    data = {
+        "paths": {"data_dir": "", "log_dir": "y"},
+        "logging": {
+            "level": "INFO",
+            "file": "glas.log",
+            "max_bytes": 2048,
+            "backup_count": 1,
+            "console": True,
+        },
+    }
+    with pytest.raises(JSONValidationError) as exc_info:
+        Settings.from_dict(data)
+    assert exc_info.value.errors
 
 
 def test_settings_ensure_directories_creates_paths(tmp_path: Path) -> None:
@@ -70,7 +86,27 @@ def test_settings_ensure_directories_creates_paths(tmp_path: Path) -> None:
     assert settings.log_dir.is_dir()
 
 
-def test_default_config_matches_schema() -> None:
-    from glas.config import validate_json
+def test_settings_ensure_directories_wraps_os_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = Settings(
+        data_dir=tmp_path / "data",
+        log_dir=tmp_path / "logs",
+        log_level="INFO",
+        log_file="glas.log",
+        log_max_bytes=1024,
+        log_backup_count=1,
+        log_console=True,
+    )
 
-    validate_json(DEFAULT_CONFIG, CONFIG_SCHEMA)
+    def _raise_os_error(*args: object, **kwargs: object) -> None:
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(Path, "mkdir", _raise_os_error)
+    with pytest.raises(SettingsError):
+        settings.ensure_directories()
+
+
+def test_default_config_is_valid() -> None:
+    settings = Settings.from_dict(DEFAULT_CONFIG)
+    assert settings.log_level == "INFO"
