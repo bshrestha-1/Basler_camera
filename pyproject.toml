@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "glas"
-version = "2.5.0"
+version = "3.0.1"
 description = "GLAS: Granular Lab Acquisition System -- acquisition and analysis platform for a Basler ace acA640-750um camera used in granular-material physics research."
 readme = "README.md"
 license = { text = "MIT" }
@@ -35,6 +35,8 @@ dependencies = [
     "psutil>=5.9",
     "pillow>=10.0",
     "matplotlib>=3.8",
+    "scipy>=1.11",
+    "cycler>=0.11",
 ]
 
 [project.optional-dependencies]
@@ -125,4 +127,10 @@ ignore_missing_imports = true
 # sam2 is an optional, lazily-imported AI dependency (see glas.ai) that
 # ships no py.typed marker.
 module = "sam2.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# scipy ships no inline type stubs (a separate scipy-stubs package
+# exists but is not a project dependency).
+module = "scipy.*"
 ignore_missing_imports = true

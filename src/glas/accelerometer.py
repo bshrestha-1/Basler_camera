@@ -43,6 +43,7 @@ from pydantic import BaseModel, ConfigDict  # noqa: E402
 
 from glas.exceptions import AccelerometerError  # noqa: E402
 from glas.frame import Frame  # noqa: E402
+from glas.plotting import apply_publication_style, savefig_publication, style_axes  # noqa: E402
 
 DEFAULT_SENSITIVITY_MV_PER_G = 10.0
 """Nominal PCB 352C22 sensitivity, in mV/g. This varies by unit and is
@@ -315,7 +316,7 @@ def plot_vibration_signal(recording: AccelerometerRecording, output_path: Path) 
     pathlib.Path
         ``output_path``, for chaining.
     """
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    apply_publication_style()
 
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.plot(recording.times_s, recording.acceleration_g, linewidth=0.8)
@@ -323,12 +324,10 @@ def plot_vibration_signal(recording: AccelerometerRecording, output_path: Path) 
     ax.set_ylabel("Acceleration (g)")
     ax.set_title("Accelerometer signal")
     ax.axhline(0, color="gray", linewidth=0.8)
+    style_axes(ax)
 
     fig.tight_layout()
-    fig.savefig(output_path, dpi=150)
-    plt.close(fig)
-
-    return output_path
+    return savefig_publication(fig, output_path)
 
 
 def analyze_vibration(

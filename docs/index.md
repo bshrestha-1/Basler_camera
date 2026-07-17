@@ -8,40 +8,54 @@ packing fraction, segregation, and related studies).
 The project is developed in phases; each phase ships as a fully tested,
 documented, production-ready release before the next one starts.
 
-## Current status: Phase 19 — AI Analysis: YOLO / SAM2 (v2.5.0)
+## Current status: Phase 20 — Full Research Platform (v3.0.1)
 
-Phase 19 adds AI-based particle detection, classification, and pixel-exact
-segmentation alongside the existing classical blob-detection pipeline: a
-trained YOLO model (`glas.ai.yolo_detector`) detects and classifies every
-particle -- including automatic intruder identification -- even under
-poor lighting or heavy overlap, and SAM2 (`glas.ai.sam2_segmenter`)
-refines each detection into an exact pixel mask for area, perimeter,
-orientation, aspect ratio, contact area between touching grains, packing
-fraction, and void fraction. Both models support full training pipelines
-(`glas.ai.annotation`, `glas.ai.yolo_train`, `glas.ai.sam2_train`) as well
-as inference-only use with pretrained weights. `torch`/`ultralytics`/`sam2`
-stay an optional dependency group (`pip install "glas[ai]"`) -- nothing
-outside `glas.ai` imports them, so `import glas`, the CLI, and the GUI all
-work without them installed, and every AI-backed CLI command/GUI tab
-shows a clear message naming exactly which packages are missing rather
-than a raw import error. `YoloDetection` is a
-`~glas.analysis.tracking_utils.Detection` subclass, so YOLO output plugs
-directly into the existing particle tracker with no changes to tracking
-logic; the GUI's analysis panel gains "Detection (YOLO)" and
-"Segmentation (SAM2)" tabs alongside the classical ones.
+Phase 20 closes out the roadmap: perfecting data taking, analysis, and
+publishable results. Spatial calibration (`glas.calibration`) converts
+every earlier phase's pixel measurements into physical units (mm) from a
+two-point or checkerboard measurement. Data-taking quality tooling
+(`glas.qa`) adds preflight checks before recording (`glas doctor`: disk
+space, camera connectivity, exposure/gain sanity, focus) and structural
+plus scientific quality assessment after recording (`glas qa`: dropped
+frames, frame-rate jitter, particle-count sanity), building on the
+existing dataset validator and timestamp gap detector rather than
+duplicating them. Every existing `plot_*` function across
+`glas.analysis`/`glas.accelerometer` now draws through a shared,
+colorblind-safe, 300-DPI publication style (`glas.plotting`). Proper
+statistics (`glas.stats`: confidence intervals via Student's t, linear
+regression) turn repeated-trial data into real uncertainty, and a
+generic multi-run comparison engine (`glas.analysis.comparison`) sweeps
+any metric against any `PhysicalParameters` field across many
+recordings, built entirely on the existing experiment manager and
+analysis functions rather than reimplementing them. `glas.report`
+generates a self-contained HTML report -- every analysis, its summary
+statistics, and a publication-styled plot, for one recording in one
+file -- with the GUI's analysis panel gaining a matching **Report** tab.
 
-- **YOLO particle detection, classification, intruder identification, training** (`glas.ai.yolo_detector`, `glas.ai.yolo_train`)
-- **SAM2 pixel-exact segmentation, shape metrics, contact area, packing/void fraction, fine-tuning** (`glas.ai.sam2_segmenter`, `glas.ai.sam2_train`)
-- **Dataset bootstrap/annotation for both models** (`glas.ai.annotation`)
-- **`glas ai detect`/`prepare-yolo-dataset`/`train-yolo`/`segment`/`prepare-sam2-dataset`/`train-sam2`** (`glas.cli`)
-- **Detection (YOLO) and Segmentation (SAM2) analysis-panel tabs** (`glas.gui`)
+- **Spatial calibration: two-point and checkerboard methods, save/load** (`glas.calibration`)
+- **Preflight checks and post-recording quality assessment** (`glas.qa`)
+- **Shared publication-quality plot styling (colorblind-safe, 300 DPI, vector export)** (`glas.plotting`)
+- **Descriptive statistics with confidence intervals, linear regression** (`glas.stats`)
+- **Generic multi-run parameter-sweep comparison** (`glas.analysis.comparison`)
+- **Self-contained HTML experiment reports** (`glas.report`)
+- **`glas doctor`/`qa`/`report`/`compare`/`calibrate`** (`glas.cli`)
+- **Report analysis-panel tab** (`glas.gui`)
 
-This release ships as v2.5.0, matching the roadmap table's own numbering
-below exactly. See the `[2.5.0]` entry in `CHANGELOG.md` and
-[`ai.md`](ai.md) for the full design.
+This release shipped as v3.0.0, matching the roadmap table's own numbering
+below exactly; v3.0.1 is a follow-up patch closing a reproducibility gap
+found in a full Phase 1-20 audit -- every recording's metadata now also
+captures frame rate, ROI offset, and the full Phase 17 camera settings
+(gamma, binning, flip, auto-exposure/auto-gain, trigger state), not just
+exposure/gain/ROI size, so a recording is always fully reproducible from
+its own `metadata.json` (see [`dataset.md`](dataset.md#reproducibility)).
+See the `[3.0.0]`/`[3.0.1]` entries in `CHANGELOG.md` and
+[`calibration.md`](calibration.md), [`qa.md`](qa.md), and
+[`publishing.md`](publishing.md) for the full design.
 
 Every phase before this one remains exactly what it was:
 
+- **AI-based YOLO detection, SAM2 segmentation, training pipelines** (`glas.ai`)
+- **`glas ai detect`/`prepare-yolo-dataset`/`train-yolo`/`segment`/`prepare-sam2-dataset`/`train-sam2`** (`glas.cli`)
 - **Desktop GUI: live preview, camera/recording controls, experiment metadata, hardware status, analysis panel, dataset browser, log console** (`glas.gui`)
 - **`glas gui`** (`glas.cli`)
 - **Camera hardware triggering, waveform generator, shaker, oscilloscope, DAQ** (`glas.camera`, `glas.hardware`)
@@ -93,7 +107,11 @@ workflow tying every phase together,
 [`accelerometer.md`](accelerometer.md) for accelerometer import and
 synchronization, [`hardware.md`](hardware.md) for lab instrument
 integration, [`gui.md`](gui.md) for the desktop GUI,
-[`ai.md`](ai.md) for YOLO detection and SAM2 segmentation, and
+[`ai.md`](ai.md) for YOLO detection and SAM2 segmentation,
+[`calibration.md`](calibration.md) for spatial calibration,
+[`qa.md`](qa.md) for data-taking quality assurance,
+[`publishing.md`](publishing.md) for publication-quality plots,
+statistics, comparison, and reports, and
 [`development.md`](development.md) for the developer workflow.
 
 ## Roadmap
@@ -118,8 +136,8 @@ integration, [`gui.md`](gui.md) for the desktop GUI,
 | 16 | v1.6 | Accelerometer synchronization — PCB 352C22, Γ, frequency/amplitude (shipped as v1.6.0) |
 | 17 | v1.7 | Hardware integration — function generators, shakers, DAQ (shipped as v1.7.0) |
 | 18 | v2.0 | GUI (shipped as v2.0.0) |
-| 19 | v2.5 | AI analysis — YOLO / SAM2 (this release, shipped as v2.5.0) |
-| 20 | v3.0 | Full research platform |
+| 19 | v2.5 | AI analysis — YOLO / SAM2 (shipped as v2.5.0) |
+| 20 | v3.0 | Full research platform (this release, shipped as v3.0.0) |
 
 Each phase's files, features, and acceptance criteria are tracked in the
 project's development roadmap.

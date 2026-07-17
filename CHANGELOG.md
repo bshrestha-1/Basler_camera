@@ -7,6 +7,118 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-07-17
+
+A full Phase 1-20 reproducibility audit found that `DatasetMetadata` did not
+capture everything needed to reproduce how a recording was configured: the
+frame rate cap, the ROI's offset (only its size was stored), and every
+Phase 17 camera setting (gamma, binning, horizontal/vertical flip,
+auto-exposure/auto-gain mode, whether the frame rate cap was enabled,
+hardware trigger state). Fixed so every recording's `metadata.json` is now a
+complete-enough snapshot to reproduce the capture configuration exactly, per
+the project's reproducibility requirement.
+
+### Added
+
+- `DatasetMetadata.frame_rate_hz`, `.roi_offset_x`, `.roi_offset_y`, and
+  `.camera_settings` (an open-ended dict for gamma/binning/flip/auto-modes/
+  trigger state) fields, all with safe defaults so existing metadata files
+  and datasets remain fully loadable.
+- `glas.controller._capture_camera_settings()`: populates the new fields
+  from the connected `Camera` at the start of every recording.
+- `glas.report.generate_report()`'s metadata table now shows ROI offset,
+  frame rate, and camera settings alongside exposure/gain, so the
+  publishable HTML report itself demonstrates the recording is fully
+  reproducible.
+
+### Fixed
+
+- `RecorderController.start_recording()` previously stored only
+  `exposure_time_us`/`gain_db`/ROI size in a recording's metadata --
+  frame rate, ROI offset, and every other camera setting were silently
+  lost, meaning a recording could not be fully reproduced from its own
+  metadata alone.
+
+## [3.0.0] - 2026-07-17
+
+Phase 20 — Full Research Platform. Closes out the 20-phase roadmap:
+perfecting data taking, analysis, and publishable results. Adds spatial
+calibration (pixel-to-millimeter conversion, two-point and checkerboard
+methods), data-taking quality assurance (preflight checks before
+recording, structural and scientific quality assessment after), a shared
+publication-quality plotting style applied across every existing
+analysis plot, proper statistics (confidence intervals via Student's t,
+linear regression) for repeated-trial data, a generic multi-run
+parameter-sweep comparison engine, and self-contained HTML experiment
+reports. `scipy` and `cycler` become core dependencies (statistics and
+publication plot styling respectively). Bumped to 3.0.0, matching the
+roadmap.
+
+### Added
+
+- `glas.calibration` (new module): `SpatialCalibration`
+  (`px_to_mm()`/`mm_to_px()`/`px_to_mm_area()`), `calibrate_from_known_distance()`
+  (two-point, from a known real-world distance between two pixel points),
+  `calibrate_from_checkerboard()` (from a checkerboard pattern of known
+  square size, averaging many independent corner-spacing measurements),
+  `save_calibration()`/`load_calibration()` (JSON persistence). Nothing
+  elsewhere in GLAS requires a calibration to exist -- every analysis
+  function continues to work in pixels with no changes.
+- `glas.qa` (new module): `run_preflight_checks()` (disk space, camera
+  connectivity, exposure/gain sanity, focus via variance of the
+  Laplacian, calibration presence -- built for `glas doctor`, run before
+  recording starts) and `assess_recording_quality()` (dropped frames and
+  frame-rate jitter via `glas.timestamps.TimestampLog`, per-frame
+  particle-count sanity via classical detection on a subsample -- built
+  for `glas qa`, run after recording finishes, on top of
+  `glas.dataset.validate_dataset()`'s structural/checksum validation).
+- `glas.plotting` (new module): `PUBLICATION_PALETTE` (Okabe-Ito
+  colorblind-safe qualitative palette), `apply_publication_style()`
+  (consistent fonts, sizes, grid, 300 DPI), `style_axes()` (spine
+  removal), `savefig_publication()`. Every existing `plot_*` function
+  across `glas.analysis.brazil_nut`/`convection`/`packing`/`segregation`
+  and `glas.accelerometer` now draws through this shared style; vector
+  formats (`.pdf`/`.svg`) continue to work exactly as before via
+  matplotlib's own extension-based format inference.
+- `glas.stats` (new module): `describe()` (sample mean, standard
+  deviation, standard error, confidence interval via Student's t
+  distribution rather than a fixed z-score) and `linear_fit()` (ordinary
+  least-squares regression: slope, intercept, standard errors, R²,
+  p-value), both correctly handling the degenerate zero-variance case
+  scipy itself returns as NaN for.
+- `glas.analysis.comparison` (new module): `compare_runs()` (generic
+  parameter-extractor/metric-extractor pattern grouping many recordings
+  by a parameter value and summarizing a metric within each group via
+  `glas.stats.describe()`, with an optional linear fit across group
+  means; a recording whose metric extraction fails is skipped with a
+  logged warning rather than aborting the whole sweep), `plot_parameter_sweep()`,
+  `export_sweep_csv()`.
+- `glas.report` (new module): `generate_report()` -- a self-contained
+  HTML report per recording covering every analysis (tracking, Brazil
+  nut, convection, packing, segregation, and optionally vibration) with
+  summary statistics and a base64-embedded publication-styled plot per
+  section; an individual analysis failing is shown as a skipped section
+  rather than aborting the whole report.
+- `glas.exceptions`: `CalibrationError`, `ReportError`.
+- CLI: `glas doctor` (preflight checks), `glas qa` (post-recording
+  quality, with `--strict` to exit nonzero on any warning), `glas report`,
+  `glas compare` (`--parameter`/`--metric` over five built-in
+  extractors each), `glas calibrate two-point`/`checkerboard`.
+- GUI: the analysis panel gains a **Report** tab (dataset folder + output
+  HTML path, backed by `glas.report.generate_report()` on the existing
+  background-thread pattern).
+- `src/glas/__init__.py`: exports every new public symbol above, plus
+  `export_tracks_csv` (a pre-existing Phase 19 symbol that had been added
+  to `glas.analysis.__all__` but not propagated to the top-level package).
+
+### Fixed
+
+- `glas.analysis.particle_tracking.export_tracks_csv()` is now
+  re-exported from the top-level `glas` package (was previously only
+  reachable via `glas.analysis`).
+- `pyproject.toml`: added a `scipy.*` mypy override (no inline type
+  stubs shipped).
+
 ## [2.5.0] - 2026-07-17
 
 Phase 19 — AI Analysis: YOLO / SAM2. Adds AI-based particle detection,

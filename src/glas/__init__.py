@@ -39,6 +39,7 @@ from glas.analysis import (
     compute_segregation_metrics,
     compute_vorticity,
     detect_particles,
+    export_tracks_csv,
     identify_brazil_nut,
     link_nearest,
     plot_brazil_nut_trajectory,
@@ -48,6 +49,20 @@ from glas.analysis import (
     plot_velocity_heatmap,
     total_circulation,
     track_dataset,
+)
+from glas.analysis.comparison import (
+    ParameterSweepResult,
+    SweepPoint,
+    compare_runs,
+    export_sweep_csv,
+    plot_parameter_sweep,
+)
+from glas.calibration import (
+    SpatialCalibration,
+    calibrate_from_checkerboard,
+    calibrate_from_known_distance,
+    load_calibration,
+    save_calibration,
 )
 from glas.camera import Camera
 from glas.camera_info import CameraInfo, UsbDiagnostics, detect_cameras
@@ -74,6 +89,7 @@ from glas.exceptions import (
     AccelerometerError,
     AcquisitionError,
     BrazilNutError,
+    CalibrationError,
     CameraConfigurationError,
     CameraConnectionError,
     CameraDriverError,
@@ -96,6 +112,7 @@ from glas.exceptions import (
     LoggingError,
     PackingError,
     RecorderError,
+    ReportError,
     SegregationError,
     SettingsError,
     WriterError,
@@ -125,10 +142,26 @@ from glas.hardware import (
 from glas.logger import configure_logging, get_logger
 from glas.metadata import DatasetMetadata, load_metadata_json, save_metadata_json
 from glas.monitor import PerformanceMonitor, PerformanceSnapshot
+from glas.plotting import (
+    PUBLICATION_DPI,
+    PUBLICATION_PALETTE,
+    apply_publication_style,
+    savefig_publication,
+    style_axes,
+)
 from glas.preview import Preview, ZoomRegion, apply_zoom
+from glas.qa import (
+    HealthCheckItem,
+    HealthCheckResult,
+    RecordingQualityReport,
+    assess_recording_quality,
+    run_preflight_checks,
+)
 from glas.recorder import Recorder, RecorderProgress, RecorderState
+from glas.report import generate_report
 from glas.ringbuffer import RingBuffer, RingBufferStats
 from glas.settings import Settings
+from glas.stats import DescriptiveStats, LinearFitResult, describe, linear_fit
 from glas.timestamps import TimestampLog, WallClockReference
 from glas.version import VERSION_INFO, __version__
 from glas.writer import DatasetWriter, WriterStats
@@ -164,6 +197,8 @@ __all__ = [
     "HardwareError",
     "InstrumentConnectionError",
     "InstrumentCommandError",
+    "CalibrationError",
+    "ReportError",
     "configure_logging",
     "get_logger",
     "Settings",
@@ -223,6 +258,7 @@ __all__ = [
     "ParticleTracker",
     "TrackedParticle",
     "track_dataset",
+    "export_tracks_csv",
     "BrazilNutTrajectory",
     "identify_brazil_nut",
     "compute_brazil_nut_trajectory",
@@ -268,4 +304,29 @@ __all__ = [
     "AnalogInputDAQ",
     "LabJackDAQ",
     "NiDAQ",
+    "SpatialCalibration",
+    "calibrate_from_known_distance",
+    "calibrate_from_checkerboard",
+    "save_calibration",
+    "load_calibration",
+    "HealthCheckItem",
+    "HealthCheckResult",
+    "run_preflight_checks",
+    "RecordingQualityReport",
+    "assess_recording_quality",
+    "PUBLICATION_PALETTE",
+    "PUBLICATION_DPI",
+    "apply_publication_style",
+    "style_axes",
+    "savefig_publication",
+    "DescriptiveStats",
+    "describe",
+    "LinearFitResult",
+    "linear_fit",
+    "SweepPoint",
+    "ParameterSweepResult",
+    "compare_runs",
+    "plot_parameter_sweep",
+    "export_sweep_csv",
+    "generate_report",
 ]

@@ -42,8 +42,10 @@ from glas.analysis import (
 from glas.analysis.tracking_utils import DEFAULT_MIN_AREA, detect_particles
 from glas.dataset import iter_frames
 from glas.exceptions import AIModelError
+from glas.report import generate_report
 
 DEFAULT_SAM2_MODEL_ID = "facebook/sam2.1-hiera-large"
+DEFAULT_REPORT_FILENAME = "report.html"
 
 
 def _segment_last_frame(
@@ -105,8 +107,8 @@ class AnalysisViewModel(QObject):
     analysis_started(str)
         Emitted with a ``kind`` string (``"tracking"``, ``"brazil_nut"``,
         ``"convection"``, ``"packing"``, ``"segregation"``,
-        ``"vibration"``, ``"detection"``, or ``"segmentation"``) when a
-        background run begins.
+        ``"vibration"``, ``"detection"``, ``"segmentation"``, or
+        ``"report"``) when a background run begins.
     analysis_finished(str, object)
         Emitted with ``(kind, result)`` on success. ``result`` is
         whichever type the underlying function returns (e.g.
@@ -159,6 +161,16 @@ class AnalysisViewModel(QObject):
         """Run :func:`glas.accelerometer.analyze_vibration` in the background."""
         self._run("vibration", analyze_vibration, csv_path, **kwargs)
 
+    def run_report(self, folder: Path, output_path: str, **kwargs: Any) -> None:
+        """Run :func:`glas.report.generate_report` in the background.
+
+        ``output_path`` is a plain string (not a ``Path``) since it comes
+        straight from the analysis panel's text field, matching
+        :meth:`run_detection`'s ``weights`` and :meth:`run_segmentation`'s
+        ``model_id`` parameters.
+        """
+        self._run("report", generate_report, folder, Path(output_path), **kwargs)
+
     def run_detection(self, folder: Path, weights: str, **kwargs: Any) -> None:
         """Run :func:`glas.ai.yolo_detector.track_dataset_yolo` in the background.
 
@@ -204,6 +216,7 @@ __all__ = [
     "AnalysisViewModel",
     "BrazilNutTrajectory",
     "ConvectionSummary",
+    "DEFAULT_REPORT_FILENAME",
     "DEFAULT_SAM2_MODEL_ID",
     "PackingSummary",
     "SegmentationSummary",

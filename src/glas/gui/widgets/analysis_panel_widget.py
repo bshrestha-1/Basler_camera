@@ -48,7 +48,11 @@ from glas.analysis import (
     plot_velocity_heatmap,
 )
 from glas.gui.ai_dialog import show_missing_ai_dependencies_dialog
-from glas.gui.viewmodels.analysis_viewmodel import DEFAULT_SAM2_MODEL_ID, AnalysisViewModel
+from glas.gui.viewmodels.analysis_viewmodel import (
+    DEFAULT_REPORT_FILENAME,
+    DEFAULT_SAM2_MODEL_ID,
+    AnalysisViewModel,
+)
 
 
 def _summarize_tracking(result: dict[int, list[Any]]) -> str:
@@ -109,6 +113,10 @@ def _summarize_segmentation(result: SegmentationSummary) -> str:
         f"Void fraction: {result.void_fraction:.3f}\n"
         f"Contacts: {len(result.contacts)}"
     )
+
+
+def _summarize_report(result: Path) -> str:
+    return f"Report saved to {result}"
 
 
 class _AnalysisTab(QWidget):
@@ -215,7 +223,7 @@ class _AnalysisTab(QWidget):
 
 class AnalysisPanelWidget(QWidget):
     """Tabbed analysis panel: tracking, detection, Brazil nut, convection, packing, segregation,
-    segmentation, vibration.
+    segmentation, vibration, report.
 
     Parameters
     ----------
@@ -295,6 +303,16 @@ class AnalysisPanelWidget(QWidget):
             run=view_model.run_vibration,
             summarize=_summarize_vibration,
             export_plot=self._export_vibration_plot,
+        )
+        self._add_tab(
+            kind="report",
+            title="Report",
+            path_label="Dataset folder:",
+            run=view_model.run_report,
+            summarize=_summarize_report,
+            export_plot=None,
+            extra_field_label="Report output path:",
+            extra_field_default=DEFAULT_REPORT_FILENAME,
         )
 
         self._add_placeholder_tab(

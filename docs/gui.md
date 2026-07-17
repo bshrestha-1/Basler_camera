@@ -111,17 +111,21 @@ changes to this widget.
 ### Analysis (`AnalysisPanelWidget`)
 
 One tab per real analysis pipeline -- Tracking, Detection (YOLO), Brazil
-Nut, Convection, Packing, Segregation, Segmentation (SAM2), Vibration --
-each running on a background `QThread` so a slow analysis never blocks
-the UI, with a plot-export button wherever a `plot_*` function exists in
-the corresponding `glas.analysis`/`glas.accelerometer` module. Detection
-and Segmentation take a second input field (YOLO weights path / SAM2
-model id) alongside the usual dataset-folder path and are backed by
-`glas.ai` (see [`ai.md`](ai.md)) -- if `torch`/`ultralytics`/`sam2`
-aren't installed, clicking Run shows a modal dialog naming the missing
-packages instead of starting a background run that would only fail.
-Histograms is the one remaining explicit, disabled placeholder tab: no
-backend function exists for it yet.
+Nut, Convection, Packing, Segregation, Segmentation (SAM2), Vibration,
+Report -- each running on a background `QThread` so a slow analysis
+never blocks the UI, with a plot-export button wherever a `plot_*`
+function exists in the corresponding `glas.analysis`/`glas.accelerometer`
+module. Detection and Segmentation take a second input field (YOLO
+weights path / SAM2 model id) alongside the usual dataset-folder path and
+are backed by `glas.ai` (see [`ai.md`](ai.md)) -- if
+`torch`/`ultralytics`/`sam2` aren't installed, clicking Run shows a modal
+dialog naming the missing packages instead of starting a background run
+that would only fail. Report also takes a second field (the output HTML
+path, defaulting to `report.html`) and is backed by `glas.report` (see
+[`publishing.md`](publishing.md)) -- the report itself is the artifact,
+so there is no plot-export button for that tab. Histograms is the one
+remaining explicit, disabled placeholder tab: no backend function exists
+for it yet.
 
 ### Dataset Browser (`DatasetBrowserWidget`)
 

@@ -11,6 +11,7 @@ touch the backend directly.
 from __future__ import annotations
 
 from glas.gui.viewmodels.analysis_viewmodel import (
+    DEFAULT_REPORT_FILENAME,
     DEFAULT_SAM2_MODEL_ID,
     AnalysisViewModel,
     BrazilNutTrajectory,
@@ -32,6 +33,7 @@ __all__ = [
     "CameraViewModel",
     "ConvectionSummary",
     "DatasetViewModel",
+    "DEFAULT_REPORT_FILENAME",
     "DEFAULT_SAM2_MODEL_ID",
     "DeviceStatus",
     "HardwareStatusViewModel",

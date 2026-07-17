@@ -71,8 +71,37 @@ def test_defaults_are_applied() -> None:
     assert metadata.frame_count == 0
     assert metadata.exposure_time_us is None
     assert metadata.gain_db is None
+    assert metadata.frame_rate_hz is None
+    assert metadata.roi_offset_x == 0
+    assert metadata.roi_offset_y == 0
+    assert metadata.camera_settings == {}
     assert metadata.notes == ""
     assert metadata.extra == {}
+
+
+def test_reproducibility_fields_round_trip() -> None:
+    metadata = _make_metadata(
+        frame_rate_hz=100.0,
+        roi_offset_x=32,
+        roi_offset_y=16,
+        camera_settings={
+            "gamma": 1.0,
+            "binning_horizontal": 1,
+            "binning_vertical": 1,
+            "reverse_x": False,
+            "reverse_y": False,
+            "exposure_auto": "Off",
+            "gain_auto": "Off",
+            "frame_rate_enabled": True,
+            "hardware_triggered": False,
+        },
+    )
+    rebuilt = DatasetMetadata.from_dict(metadata.to_dict())
+    assert rebuilt == metadata
+    assert rebuilt.frame_rate_hz == 100.0
+    assert rebuilt.roi_offset_x == 32
+    assert rebuilt.roi_offset_y == 16
+    assert rebuilt.camera_settings["gamma"] == 1.0
 
 
 def test_save_and_load_metadata_json_round_trip(tmp_path: Path) -> None:

@@ -17,7 +17,7 @@ import pytest
 pypylon = pytest.importorskip("pypylon")
 
 from glas.camera_info import detect_cameras  # noqa: E402
-from glas.controller import RecorderController  # noqa: E402
+from glas.controller import RecorderController, _capture_camera_settings  # noqa: E402
 from glas.exceptions import CameraConnectionError, RecorderError  # noqa: E402
 from glas.recorder import RecorderState  # noqa: E402
 
@@ -91,6 +91,52 @@ def test_start_recording_resolves_auto_format_to_a_concrete_format(
         recorder = controller.start_recording()
         try:
             assert recorder.dataset.metadata.dataset_format in ("hdf5", "raw_binary")
+        finally:
+            controller.stop_recording()
+    finally:
+        controller.disconnect()
+
+
+def test_capture_camera_settings_returns_every_expected_key(
+    controller: RecorderController,
+) -> None:
+    controller.connect()
+    try:
+        settings = _capture_camera_settings(controller.camera)
+        assert set(settings) == {
+            "gamma",
+            "binning_horizontal",
+            "binning_vertical",
+            "reverse_x",
+            "reverse_y",
+            "exposure_auto",
+            "gain_auto",
+            "frame_rate_enabled",
+            "hardware_triggered",
+        }
+    finally:
+        controller.disconnect()
+
+
+def test_start_recording_captures_full_camera_configuration_for_reproducibility(
+    controller: RecorderController,
+) -> None:
+    """Every recording's metadata must be enough to reproduce the camera's
+    configuration -- not just exposure/gain, but frame rate, the ROI's
+    offset (not only its size), and every other Phase 17 camera setting."""
+    controller.connect()
+    try:
+        recorder = controller.start_recording()
+        try:
+            metadata = recorder.dataset.metadata
+            assert metadata.frame_rate_hz is not None
+            assert metadata.frame_rate_hz > 0
+            assert metadata.roi_offset_x == controller.camera.roi.offset_x
+            assert metadata.roi_offset_y == controller.camera.roi.offset_y
+            assert metadata.camera_settings["gamma"] == controller.camera.gamma
+            assert metadata.camera_settings["exposure_auto"] == controller.camera.exposure_auto
+            assert metadata.camera_settings["gain_auto"] == controller.camera.gain_auto
+            assert metadata.camera_settings["hardware_triggered"] is False
         finally:
             controller.stop_recording()
     finally:

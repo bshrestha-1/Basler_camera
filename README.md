@@ -6,20 +6,19 @@ research (Brazil nut effect, convection, packing fraction, segregation,
 and related studies). It is developed in phases, each shipped as a fully
 tested, documented, production-ready release.
 
-**Current release: Phase 19 — AI Analysis: YOLO / SAM2 (v2.5.0).**
-GLAS now detects, classifies, and pixel-exactly segments particles with
-trained YOLO and SAM2 models, alongside the existing classical
-blob-detection pipeline: YOLO detects and classifies every particle
-(including automatic intruder identification) even under poor lighting
-or heavy overlap, and SAM2 refines each detection into an exact mask for
-area, perimeter, orientation, aspect ratio, contact area, packing
-fraction, and void fraction. Both models support full training pipelines
-as well as inference-only use with pretrained weights. `torch`/
-`ultralytics`/`sam2` stay an optional dependency (`pip install
-"glas[ai]"`) -- `import glas` and every other CLI command/GUI panel work
-without them installed. Try it with `glas ai detect` / `glas ai segment`,
-or the GUI's new Detection/Segmentation tabs — see
-[`docs/ai.md`](docs/ai.md) or [`CHANGELOG.md`](CHANGELOG.md) for details.
+**Current release: Phase 20 — Full Research Platform (v3.0.1).**
+GLAS closes out its roadmap with the tools that turn a recording into a
+publishable result: spatial calibration (px -> mm, two-point or
+checkerboard), preflight and post-recording data-quality checks
+(`glas doctor`/`glas qa`), a shared colorblind-safe 300-DPI publication
+plot style applied across every existing analysis plot, proper
+statistics (confidence intervals, linear regression) for repeated-trial
+data, a generic multi-run parameter-sweep comparison engine
+(`glas compare`), and self-contained HTML experiment reports
+(`glas report`) with a matching GUI tab. See
+[`docs/calibration.md`](docs/calibration.md),
+[`docs/qa.md`](docs/qa.md), [`docs/publishing.md`](docs/publishing.md),
+or [`CHANGELOG.md`](CHANGELOG.md) for details.
 
 ## Installation
 
@@ -100,6 +99,20 @@ glas trigger enable --source Line1 --activation RisingEdge
 glas shaker set-gamma 192.168.1.50 2.0 --volts-per-g 0.5 --calibration-frequency-hz 60
 glas daq read labjack --channel 0
 glas oscilloscope query 192.168.1.60 "*IDN?"
+
+# Check the setup before recording, and compute a spatial calibration
+glas doctor ~/glas_data --calibration calibration.json
+glas calibrate two-point 100 200 100 340 50.0 --output calibration.json
+
+# Check a recording's structural integrity and scientific data quality
+glas qa ~/glas_data/Run0001 --expected-fps 30
+
+# Compare a metric across many recordings, with real statistical uncertainty
+glas compare ~/glas_data --parameter target-acceleration-g \
+    --metric brazil-nut-rise-time --tag brazil-nut --plot sweep.png
+
+# Generate a self-contained, publication-ready HTML report for one recording
+glas report ~/glas_data/Run0001 report.html
 
 # Or launch the desktop GUI (pip install -e ".[gui]" first)
 glas gui ~/glas_data
@@ -578,12 +591,66 @@ prepare-yolo-dataset`/`train-yolo`, `glas ai prepare-sam2-dataset`/
 `train-sam2`) -- see [`docs/ai.md`](docs/ai.md) for the full design,
 including how to fine-tune SAM2 on your own material.
 
+### Calibration, data quality, comparison, and reports
+
+Convert pixel measurements to millimeters, check a recording is
+trustworthy, compare a metric across many recordings with real
+statistical uncertainty, and generate a publication-ready summary:
+
+```python
+from glas.calibration import calibrate_from_known_distance
+from glas.qa import assess_recording_quality
+from glas.experiment import ExperimentManager, get_physical_parameters
+from glas.analysis import analyze_brazil_nut
+from glas.analysis.comparison import compare_runs, plot_parameter_sweep
+from glas.report import generate_report
+
+calibration = calibrate_from_known_distance((100, 200), (100, 340), distance_mm=50.0)
+print(calibration.mm_per_pixel)
+
+report = assess_recording_quality(dataset.folder, expected_fps=30.0)
+print(report.is_clean, report.warnings)
+
+manager = ExperimentManager(dataset.folder.parent)
+result = compare_runs(
+    manager.search_experiments(tag="brazil-nut"),
+    parameter_fn=lambda md: get_physical_parameters(md).target_acceleration_g,
+    metric_fn=lambda folder: analyze_brazil_nut(folder).rise_time_s,
+    parameter_name="Gamma", metric_name="Rise time (s)",
+)
+plot_parameter_sweep(result, Path("sweep.pdf"))
+
+generate_report(dataset.folder, Path("report.html"))
+```
+
+or from the command line:
+
+```bash
+glas doctor ~/glas_data --calibration calibration.json
+glas calibrate two-point 100 200 100 340 50.0 --output calibration.json
+glas qa ~/glas_data/Run0001 --expected-fps 30
+glas compare ~/glas_data --parameter target-acceleration-g --metric brazil-nut-rise-time --plot sweep.png
+glas report ~/glas_data/Run0001 report.html
+```
+
+Every `plot_*` function across the whole project (including
+`plot_parameter_sweep` above) draws through a shared, colorblind-safe,
+300-DPI publication style (`glas.plotting`) -- pass a `.pdf`/`.svg`
+output path anywhere a plot path is accepted for a vector figure. See
+[`docs/calibration.md`](docs/calibration.md), [`docs/qa.md`](docs/qa.md),
+and [`docs/publishing.md`](docs/publishing.md) for the full design.
+
 ## Project layout
 
 ```
 src/glas/          Package source (import glas)
   ai/                Optional: YOLO detection, SAM2 segmentation (pip install glas[ai])
   gui/               Optional: PySide6/Qt6 desktop GUI (pip install glas[gui])
+  calibration.py     Spatial (px -> mm) calibration
+  qa.py              Preflight checks, post-recording quality assessment
+  plotting.py        Shared publication-quality plot styling
+  stats.py           Descriptive statistics, linear regression
+  report.py          Self-contained HTML experiment reports
 tests/              pytest unit tests (one file per module)
 docs/               Documentation
 pyproject.toml      Packaging, dependencies, tool configuration

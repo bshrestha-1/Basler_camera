@@ -350,7 +350,47 @@ error-handling logic is unit-testable without physical hardware -- see
 [`hardware.md`](hardware.md) for the full design, including why the
 Modal Shop 2025E itself has no digital protocol to talk to.
 
-## 14. Find it again later
+## 14. Perfect your data: calibration, quality checks, comparison, and reports
+
+Before recording, check the setup and (optionally) compute a
+pixel-to-millimeter calibration:
+
+```bash
+glas doctor ~/glas_data --calibration calibration.json
+glas calibrate two-point 100 200 100 340 50.0 --output calibration.json
+```
+
+After recording, check the data is actually usable before trusting it:
+
+```bash
+glas qa ~/glas_data/Run0001 --expected-fps 30
+```
+
+Once you have several recordings at different conditions (e.g. several
+Gammas), compare a metric across all of them with real statistical
+uncertainty:
+
+```bash
+glas compare ~/glas_data --parameter target-acceleration-g \
+    --metric brazil-nut-rise-time --tag brazil-nut --plot sweep.png --csv sweep.csv
+```
+
+And generate a publication-ready summary of everything for one
+recording:
+
+```bash
+glas report ~/glas_data/Run0001 report.html
+```
+
+Every `plot_*` function used throughout this walkthrough (Brazil nut,
+convection, packing, segregation, vibration, and the comparison plot
+above) already draws through a shared, colorblind-safe, 300-DPI
+publication style -- pass a `.pdf`/`.svg` output path anywhere a plot
+path is accepted for a vector figure instead of a raster PNG. See
+[`calibration.md`](calibration.md), [`qa.md`](qa.md), and
+[`publishing.md`](publishing.md) for the full design of all four pieces.
+
+## 15. Find it again later
 
 ```bash
 glas experiment list ~/glas_data --tag brazil-nut
@@ -388,4 +428,10 @@ reference.
   `validate_dataset()`.
 - [`docs/gui.md`](gui.md) -- the desktop GUI, panel by panel.
 - [`docs/ai.md`](ai.md) -- training and using YOLO/SAM2 models.
+- [`docs/calibration.md`](calibration.md) -- pixel-to-millimeter spatial
+  calibration.
+- [`docs/qa.md`](qa.md) -- preflight checks and post-recording quality
+  assessment.
+- [`docs/publishing.md`](publishing.md) -- publication-quality plots,
+  statistics, comparison, and reports.
 - [`docs/development.md`](development.md) -- contributing to GLAS itself.

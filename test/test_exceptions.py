@@ -7,6 +7,7 @@ import pytest
 from glas.exceptions import (
     AccelerometerError,
     BrazilNutError,
+    CalibrationError,
     ConfigurationError,
     ConvectionError,
     DisplayError,
@@ -19,6 +20,7 @@ from glas.exceptions import (
     JSONValidationError,
     LoggingError,
     PackingError,
+    ReportError,
     SegregationError,
     SettingsError,
 )
@@ -42,6 +44,8 @@ from glas.exceptions import (
         HardwareError,
         InstrumentConnectionError,
         InstrumentCommandError,
+        CalibrationError,
+        ReportError,
     ],
 )
 def test_all_exceptions_inherit_from_glaserror(exc_type: type[Exception]) -> None:

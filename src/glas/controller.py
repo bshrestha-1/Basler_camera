@@ -34,6 +34,27 @@ DEFAULT_BUFFER_CAPACITY = 256
 _SHUTDOWN_SIGNALS = (signal.SIGINT, signal.SIGTERM)
 
 
+def _capture_camera_settings(camera: Camera) -> dict[str, Any]:
+    """Snapshot every camera setting not already a named :class:`DatasetMetadata` field.
+
+    Captured alongside ``exposure_time_us``, ``gain_db``, ``frame_rate_hz``,
+    and the ROI so a recording's metadata is enough to reproduce exactly
+    how the camera was configured, per the project's reproducibility
+    requirement.
+    """
+    return {
+        "gamma": camera.gamma,
+        "binning_horizontal": camera.binning[0],
+        "binning_vertical": camera.binning[1],
+        "reverse_x": camera.reverse_x,
+        "reverse_y": camera.reverse_y,
+        "exposure_auto": camera.exposure_auto,
+        "gain_auto": camera.gain_auto,
+        "frame_rate_enabled": camera.frame_rate_enabled,
+        "hardware_triggered": camera.is_hardware_triggered(),
+    }
+
+
 class RecorderController:
     """Owns a camera connection and orchestrates recordings on it.
 
@@ -142,16 +163,21 @@ class RecorderController:
         info = self._camera.get_info()
         folder = create_experiment_folder(self._base_data_dir)
         resolved_format = resolve_dataset_format(dataset_format)
+        roi = self._camera.roi
         metadata = DatasetMetadata(
             dataset_format=resolved_format,
             camera_model=info.model_name,
             camera_serial=info.serial_number,
             pixel_format=self._camera.pixel_format,
-            width=self._camera.roi.width,
-            height=self._camera.roi.height,
+            width=roi.width,
+            height=roi.height,
             created_at_utc=datetime.now(timezone.utc).isoformat(),
             exposure_time_us=self._camera.exposure_time_us,
             gain_db=self._camera.gain_db,
+            frame_rate_hz=self._camera.frame_rate_hz,
+            roi_offset_x=roi.offset_x,
+            roi_offset_y=roi.offset_y,
+            camera_settings=_capture_camera_settings(self._camera),
             notes=notes,
             extra=build_experiment_extra(name=name, tags=tags, extra=extra),
         )

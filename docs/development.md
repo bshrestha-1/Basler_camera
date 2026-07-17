@@ -102,6 +102,7 @@ src/glas/            Package source (importable as `import glas`)
     __init__.py
     tracking_utils.py               Pure detection/linking functions
     particle_tracking.py            ParticleTracker, track_dataset(), export_tracks_csv()
+    comparison.py                    Multi-run parameter-sweep comparison
   hardware/                         Lab instrument integration (SCPI, DAQ)
   accelerometer.py                  Vibration import, analysis, frame sync
   gui/                              PySide6/Qt6 desktop GUI (optional: `pip install glas[gui]`)
@@ -119,6 +120,11 @@ src/glas/            Package source (importable as `import glas`)
     yolo_train.py                     train_yolo(), validate_yolo(), export_yolo_model()
     sam2_segmenter.py                 Sam2Segmenter, shape metrics, contact area
     sam2_train.py                     SAM2 dataset bootstrap and fine-tuning
+  calibration.py                    Spatial (px -> mm) calibration
+  qa.py                             Preflight checks, post-recording quality assessment
+  plotting.py                       Shared publication-quality plot styling
+  stats.py                          Descriptive statistics, linear regression
+  report.py                         Self-contained HTML experiment reports
 tests/               pytest test suite, one file per src module
 docs/                Project documentation
 .github/workflows/    CI (ci.yml)

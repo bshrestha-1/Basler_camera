@@ -41,6 +41,7 @@ from glas.analysis.tracking_utils import (  # noqa: E402
 from glas.dataset import iter_frames  # noqa: E402
 from glas.exceptions import SegregationError  # noqa: E402
 from glas.metadata import load_metadata_json  # noqa: E402
+from glas.plotting import apply_publication_style, savefig_publication, style_axes  # noqa: E402
 
 DEFAULT_GRID_SPACING = 32
 _METADATA_FILENAME = "metadata.json"
@@ -263,7 +264,7 @@ def plot_segregation_summary(summary: SegregationSummary, output_path: Path) -> 
     pathlib.Path
         ``output_path``, for chaining.
     """
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    apply_publication_style()
 
     segregation = [m.segregation_index for m in summary.metrics]
     mixing = [m.mixing_index for m in summary.metrics]
@@ -277,17 +278,16 @@ def plot_segregation_summary(summary: SegregationSummary, output_path: Path) -> 
     index_ax.set_ylim(-0.05, 1.05)
     index_ax.set_title("Segregation analysis")
     index_ax.legend()
+    style_axes(index_ax)
 
     entropy_ax.plot(summary.times_s, entropy, marker="o", markersize=3, color="black")
     entropy_ax.set_ylabel("Mixing entropy")
     entropy_ax.set_xlabel("Time (s)")
     entropy_ax.set_ylim(-0.05, 1.05)
+    style_axes(entropy_ax)
 
     fig.tight_layout()
-    fig.savefig(output_path, dpi=150)
-    plt.close(fig)
-
-    return output_path
+    return savefig_publication(fig, output_path)
 
 
 def analyze_segregation(

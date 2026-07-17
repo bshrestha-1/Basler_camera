@@ -36,6 +36,7 @@ from glas.analysis.tracking_utils import (  # noqa: E402
 from glas.dataset import iter_frames  # noqa: E402
 from glas.exceptions import PackingError  # noqa: E402
 from glas.metadata import load_metadata_json  # noqa: E402
+from glas.plotting import apply_publication_style, savefig_publication, style_axes  # noqa: E402
 
 DEFAULT_GRID_SPACING = 32
 _METADATA_FILENAME = "metadata.json"
@@ -262,7 +263,7 @@ def plot_packing_heatmap(field: PackingField, output_path: Path) -> Path:
     pathlib.Path
         ``output_path``, for chaining.
     """
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    apply_publication_style()
 
     fig, ax = plt.subplots(figsize=(8, 6))
     mesh = ax.pcolormesh(
@@ -277,10 +278,7 @@ def plot_packing_heatmap(field: PackingField, output_path: Path) -> Path:
     ax.set_title(f"Packing fraction -- frame {field.frame_id}")
 
     fig.tight_layout()
-    fig.savefig(output_path, dpi=150)
-    plt.close(fig)
-
-    return output_path
+    return savefig_publication(fig, output_path)
 
 
 def plot_packing_summary(summary: PackingSummary, output_path: Path) -> Path:
@@ -302,7 +300,7 @@ def plot_packing_summary(summary: PackingSummary, output_path: Path) -> Path:
     pathlib.Path
         ``output_path``, for chaining.
     """
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    apply_publication_style()
 
     packing_fractions = [m.packing_fraction for m in summary.metrics]
     particle_counts = [m.particle_count for m in summary.metrics]
@@ -312,16 +310,15 @@ def plot_packing_summary(summary: PackingSummary, output_path: Path) -> Path:
     fraction_ax.plot(summary.times_s, packing_fractions, marker="o", markersize=3)
     fraction_ax.set_ylabel("Packing fraction")
     fraction_ax.set_title("Packing analysis")
+    style_axes(fraction_ax)
 
     count_ax.plot(summary.times_s, particle_counts, marker="o", markersize=3)
     count_ax.set_ylabel("Particle count")
     count_ax.set_xlabel("Time (s)")
+    style_axes(count_ax)
 
     fig.tight_layout()
-    fig.savefig(output_path, dpi=150)
-    plt.close(fig)
-
-    return output_path
+    return savefig_publication(fig, output_path)
 
 
 def analyze_packing(

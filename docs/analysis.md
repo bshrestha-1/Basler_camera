@@ -39,6 +39,10 @@ above, see [`ai.md`](ai.md) -- `glas.ai.yolo_detector.YoloDetection` is a
 `Detection` subclass, so YOLO output plugs directly into
 `ParticleTracker` and every pipeline in this file with no changes.
 
+For comparing a metric across many recordings (a parameter sweep, with
+real statistical uncertainty), see `glas.analysis.comparison` in
+[`publishing.md`](publishing.md).
+
 ## Quickstart
 
 ```python

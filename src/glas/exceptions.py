@@ -214,3 +214,17 @@ class AIModelError(AIError):
 
 class AIDatasetError(AIError):
     """Raised when preparing a YOLO/SAM2 training dataset (annotation, split, export) fails."""
+
+
+class CalibrationError(GLASError):
+    """Raised when spatial calibration cannot be computed, saved, or loaded."""
+
+
+class ReportError(GLASError):
+    """Raised when an experiment report cannot be generated.
+
+    Covers only total failure (e.g. the dataset's metadata can't be read
+    at all) -- an individual analysis failing partway through report
+    generation is caught and shown as a skipped section instead of
+    raising this.
+    """

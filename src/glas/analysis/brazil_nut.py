@@ -39,6 +39,7 @@ from glas.analysis.particle_tracking import (  # noqa: E402
 from glas.analysis.tracking_utils import DEFAULT_MIN_AREA  # noqa: E402
 from glas.exceptions import BrazilNutError  # noqa: E402
 from glas.metadata import load_metadata_json  # noqa: E402
+from glas.plotting import apply_publication_style, savefig_publication, style_axes  # noqa: E402
 
 DEFAULT_SETTLE_FRACTION = 0.9
 _METADATA_FILENAME = "metadata.json"
@@ -231,7 +232,7 @@ def plot_brazil_nut_trajectory(trajectory: BrazilNutTrajectory, output_path: Pat
     pathlib.Path
         ``output_path``, for chaining.
     """
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    apply_publication_style()
 
     fig, (height_ax, velocity_ax) = plt.subplots(2, 1, figsize=(8, 6), sharex=True)
 
@@ -241,17 +242,16 @@ def plot_brazil_nut_trajectory(trajectory: BrazilNutTrajectory, output_path: Pat
     if trajectory.rise_time_s is not None:
         height_ax.axvline(trajectory.rise_time_s, color="red", linestyle="--", label="rise time")
         height_ax.legend()
+    style_axes(height_ax)
 
     velocity_ax.plot(trajectory.times_s[1:], trajectory.velocities_px_s, marker="o", markersize=3)
     velocity_ax.set_ylabel("Rise velocity (px/s)")
     velocity_ax.set_xlabel("Time (s)")
     velocity_ax.axhline(0, color="gray", linewidth=0.8)
+    style_axes(velocity_ax)
 
     fig.tight_layout()
-    fig.savefig(output_path, dpi=150)
-    plt.close(fig)
-
-    return output_path
+    return savefig_publication(fig, output_path)
 
 
 def analyze_brazil_nut(

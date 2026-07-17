@@ -61,8 +61,8 @@ def widget(qapp: QApplication) -> AnalysisPanelWidget:
 
 
 class TestTabStructure:
-    def test_has_nine_tabs(self, widget: AnalysisPanelWidget) -> None:
-        assert widget._tabs.count() == 9
+    def test_has_ten_tabs(self, widget: AnalysisPanelWidget) -> None:
+        assert widget._tabs.count() == 10
 
     def test_tab_titles_match_expected_order(self, widget: AnalysisPanelWidget) -> None:
         titles = [widget._tabs.tabText(i) for i in range(widget._tabs.count())]
@@ -75,6 +75,7 @@ class TestTabStructure:
             "Segregation",
             "Segmentation (SAM2)",
             "Vibration",
+            "Report",
             "Histograms",
         ]
 
@@ -102,6 +103,47 @@ class TestTabStructure:
     def test_non_ai_tabs_have_no_extra_field(self, widget: AnalysisPanelWidget) -> None:
         assert widget._analysis_tabs["tracking"]._extra_field_edit is None
         assert widget._analysis_tabs["packing"]._extra_field_edit is None
+
+    def test_report_tab_has_default_output_path(self, widget: AnalysisPanelWidget) -> None:
+        from glas.gui.viewmodels.analysis_viewmodel import DEFAULT_REPORT_FILENAME
+
+        report_tab = widget._analysis_tabs["report"]
+        assert report_tab._extra_field_edit is not None
+        assert report_tab._extra_field_edit.text() == DEFAULT_REPORT_FILENAME
+
+    def test_report_tab_has_no_export_button(self, widget: AnalysisPanelWidget) -> None:
+        report_tab = widget._analysis_tabs["report"]
+        assert report_tab._export_button.isVisible() is False
+
+
+class TestRunningReport:
+    def test_run_generates_an_html_file(
+        self, widget: AnalysisPanelWidget, tmp_path: Path, qtbot
+    ) -> None:
+        folder = _make_packable_dataset(tmp_path)
+        output_path = tmp_path / "report.html"
+        tab = widget._analysis_tabs["report"]
+        tab._path_edit.setText(str(folder))
+        tab._extra_field_edit.setText(str(output_path))
+
+        with qtbot.waitSignal(widget._view_model.analysis_finished, timeout=20000):
+            tab._on_run_clicked()
+
+        assert tab._status_label.text() == "Done"
+        assert "Report saved to" in tab._result_text.toPlainText()
+        assert output_path.exists()
+
+    def test_run_with_missing_dataset_shows_error(
+        self, widget: AnalysisPanelWidget, tmp_path: Path, qtbot
+    ) -> None:
+        tab = widget._analysis_tabs["report"]
+        tab._path_edit.setText(str(tmp_path / "does-not-exist"))
+        tab._extra_field_edit.setText(str(tmp_path / "report.html"))
+
+        with qtbot.waitSignal(widget._view_model.analysis_failed, timeout=5000):
+            tab._on_run_clicked()
+
+        assert tab._status_label.text().startswith("Error")
 
 
 class TestRunningPacking:

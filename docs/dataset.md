@@ -46,6 +46,9 @@ with Camera() as camera:
         created_at_utc="2026-07-13T12:00:00+00:00",
         exposure_time_us=camera.exposure_time_us,
         gain_db=camera.gain_db,
+        frame_rate_hz=camera.frame_rate_hz,
+        roi_offset_x=camera.roi.offset_x,
+        roi_offset_y=camera.roi.offset_y,
         notes="shaker at 60 Hz, 4g",
         extra={"operator": "bijay", "experiment": "brazil-nut-01"},
     )
@@ -131,6 +134,20 @@ own `dataset_format` parameter. Use `glas.dataset.resolve_dataset_format()` if
 you need to resolve `"auto"` to a concrete value before constructing metadata
 yourself (see `glas.controller.RecorderController.start_recording()` for an
 example).
+
+### Reproducibility
+
+Every recording's metadata is a complete-enough snapshot to reproduce how it
+was captured: camera model/serial, pixel format, ROI (both size --
+`width`/`height` -- and offset -- `roi_offset_x`/`roi_offset_y`), exposure
+time, gain, frame rate cap (`frame_rate_hz`), the timestamp it was created
+(`created_at_utc`), the GLAS version that created it (`glas_version`), and
+every other camera setting that affects capture (gamma, binning, horizontal/
+vertical flip, auto-exposure/auto-gain mode, whether the frame rate cap was
+enabled, hardware trigger state) in the open-ended `camera_settings` dict.
+`glas.controller.RecorderController.start_recording()` populates all of this
+automatically from the connected `Camera` -- readers of a dataset's
+`metadata.json` never need to guess how it was configured.
 
 ## Checksums and validation
 

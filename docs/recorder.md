@@ -41,10 +41,13 @@ print(f"Recorded {metadata.frame_count} frames to a dataset.")
 
 `start_recording()` creates the next `RunNNNN` experiment folder (see
 [`dataset.md`](dataset.md)), builds `DatasetMetadata` from the camera's
-*current* settings (exposure, gain, ROI, pixel format), creates the
-`Dataset`, and starts recording -- all in one call. Pass `name=`/`tags=`
-to make the recording discoverable later through
-`glas.experiment.ExperimentManager` (see [`experiment.md`](experiment.md)).
+*current* settings -- exposure, gain, frame rate, full ROI (size and
+offset), pixel format, and every other camera setting (gamma, binning,
+flip, auto-exposure/auto-gain, trigger mode), see
+[`dataset.md`](dataset.md#reproducibility) -- creates the `Dataset`, and
+starts recording -- all in one call. Pass `name=`/`tags=` to make the
+recording discoverable later through `glas.experiment.ExperimentManager`
+(see [`experiment.md`](experiment.md)).
 
 ## Module layout
 

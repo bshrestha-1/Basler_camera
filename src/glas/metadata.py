@@ -40,6 +40,22 @@ class DatasetMetadata(BaseModel):
         dataset.
     exposure_time_us, gain_db : float or None
         Camera settings at the start of the recording, if known.
+    frame_rate_hz : float or None
+        Acquisition frame rate cap at the start of the recording, if known.
+        See :attr:`glas.camera.Camera.frame_rate_hz`.
+    roi_offset_x, roi_offset_y : int
+        Region-of-interest offset, in pixels, of the ``width`` x ``height``
+        crop relative to the sensor's top-left corner. Zero for a
+        full-sensor capture.
+    camera_settings : dict
+        Every other camera setting that affects how a frame is captured
+        and therefore matters for reproducing the recording: gamma,
+        binning, horizontal/vertical flip, auto-exposure/auto-gain mode,
+        whether the frame rate cap is enabled, and hardware trigger
+        state. Populated by :meth:`glas.controller.RecorderController.start_recording`
+        from :class:`~glas.camera.Camera`; open-ended (a plain dict, not
+        named fields) so a future camera setting doesn't require a schema
+        change here.
     notes : str
         Free-text operator notes.
     extra : dict
@@ -61,6 +77,10 @@ class DatasetMetadata(BaseModel):
     frame_count: int = Field(default=0, ge=0)
     exposure_time_us: float | None = None
     gain_db: float | None = None
+    frame_rate_hz: float | None = None
+    roi_offset_x: int = Field(default=0, ge=0)
+    roi_offset_y: int = Field(default=0, ge=0)
+    camera_settings: dict[str, Any] = Field(default_factory=dict)
     notes: str = ""
     extra: dict[str, Any] = Field(default_factory=dict)
 

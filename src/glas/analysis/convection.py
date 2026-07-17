@@ -37,6 +37,7 @@ from pydantic import BaseModel, ConfigDict  # noqa: E402
 from glas.analysis.tracking_utils import to_uint8_mono  # noqa: E402
 from glas.dataset import iter_frames  # noqa: E402
 from glas.exceptions import ConvectionError  # noqa: E402
+from glas.plotting import apply_publication_style, savefig_publication  # noqa: E402
 
 DEFAULT_GRID_SPACING = 16
 HeatmapBackground = Literal["speed", "vorticity"]
@@ -292,7 +293,7 @@ def plot_velocity_heatmap(
     else:
         raise ValueError(f"Unknown background {background!r}; expected 'speed' or 'vorticity'.")
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    apply_publication_style()
 
     fig, ax = plt.subplots(figsize=(8, 6))
     mesh = ax.pcolormesh(field.x, field.y, values, shading="auto", cmap=cmap)
@@ -308,10 +309,7 @@ def plot_velocity_heatmap(
     ax.set_title(f"Velocity field -- frame {field.frame_id}")
 
     fig.tight_layout()
-    fig.savefig(output_path, dpi=150)
-    plt.close(fig)
-
-    return output_path
+    return savefig_publication(fig, output_path)
 
 
 def analyze_convection(

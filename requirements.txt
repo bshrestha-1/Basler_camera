@@ -9,3 +9,5 @@ opencv-python>=4.9
 psutil>=5.9
 pillow>=10.0
 matplotlib>=3.8
+scipy>=1.11
+cycler>=0.11

@@ -54,15 +54,8 @@ class LiveFeedViewModel(QObject):
         return self.preview is not None
 
     def _poll(self) -> None:
-        print("POLL CALLED")
-
         if self.preview is None:
-            print("preview is None")
             return
-
         frame = self.preview.update()
-        print("frame =", frame)
-
         if frame is not None:
-            print("EMITTING", frame.frame_id)
             self.frame_ready.emit(frame)

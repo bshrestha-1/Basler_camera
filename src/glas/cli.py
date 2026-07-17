@@ -7,20 +7,28 @@ tracking particles across a recording, analyzing the Brazil nut
 (intruder) effect, measuring bulk convection via optical flow, measuring
 packing fraction and segregation, importing/analyzing/synchronizing
 accelerometer recordings, controlling lab hardware (camera triggers, a
-waveform generator, an oscilloscope, a shaker, and DAQ devices), and
+waveform generator, an oscilloscope, a shaker, and DAQ devices),
 detecting/classifying/segmenting particles with trained YOLO and SAM2
-models (the ``ai`` subcommand group, requires `pip install glas[ai]`).
+models (the ``ai`` subcommand group, requires `pip install glas[ai]`),
+computing spatial calibration, running data-taking quality checks
+(``doctor``/``qa``), generating publishable HTML reports, and comparing a
+metric across many recordings via a parameter sweep (``compare``).
 """
 
 from __future__ import annotations
 
 import csv
 import time
+from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
+from typing import cast
 
+import cv2
+import numpy as np
 import typer
 import yaml
+from numpy.typing import NDArray
 
 from glas.accelerometer import (
     DEFAULT_SENSITIVITY_MV_PER_G,
@@ -58,6 +66,7 @@ from glas.ai.yolo_train import (
 from glas.ai.yolo_train import DEFAULT_EPOCHS as DEFAULT_YOLO_EPOCHS
 from glas.analysis import export_tracks_csv, track_dataset
 from glas.analysis.brazil_nut import DEFAULT_SETTLE_FRACTION, analyze_brazil_nut
+from glas.analysis.comparison import compare_runs, export_sweep_csv, plot_parameter_sweep
 from glas.analysis.convection import DEFAULT_GRID_SPACING, analyze_convection
 from glas.analysis.packing import DEFAULT_GRID_SPACING as DEFAULT_PACKING_GRID_SPACING
 from glas.analysis.packing import analyze_packing, plot_packing_summary
@@ -65,6 +74,11 @@ from glas.analysis.particle_tracking import DEFAULT_MAX_DISTANCE, DEFAULT_MAX_GA
 from glas.analysis.segregation import DEFAULT_GRID_SPACING as DEFAULT_SEGREGATION_GRID_SPACING
 from glas.analysis.segregation import analyze_segregation
 from glas.analysis.tracking_utils import DEFAULT_MIN_AREA
+from glas.calibration import (
+    calibrate_from_checkerboard,
+    calibrate_from_known_distance,
+    save_calibration,
+)
 from glas.camera import Camera
 from glas.config import deep_merge, read_yaml_file
 from glas.controller import RecorderController
@@ -75,6 +89,7 @@ from glas.exceptions import (
     AIDependencyError,
     AIModelError,
     BrazilNutError,
+    CalibrationError,
     CameraConfigurationError,
     CameraConnectionError,
     CameraDriverError,
@@ -90,9 +105,10 @@ from glas.exceptions import (
     HardwareError,
     JSONValidationError,
     PackingError,
+    ReportError,
     SegregationError,
 )
-from glas.experiment import ExperimentManager
+from glas.experiment import ExperimentManager, get_physical_parameters
 from glas.export import export_dataset
 from glas.hardware.daq import AnalogInputDAQ, LabJackDAQ, NiDAQ
 from glas.hardware.oscilloscope import SCPIOscilloscope
@@ -100,6 +116,14 @@ from glas.hardware.scpi import SocketSCPITransport
 from glas.hardware.shaker import ShakerCalibration, ShakerController
 from glas.hardware.waveform_generator import SiglentSDG1032X
 from glas.logger import configure_logging, get_logger
+from glas.metadata import DatasetMetadata
+from glas.qa import (
+    DEFAULT_MIN_DISK_FREE_GB,
+    DEFAULT_MIN_SHARPNESS,
+    assess_recording_quality,
+    run_preflight_checks,
+)
+from glas.report import generate_report
 from glas.settings import DEFAULT_CONFIG, Settings
 from glas.version import __version__
 
@@ -128,6 +152,8 @@ ai_app = typer.Typer(
     help="YOLO particle detection and SAM2 segmentation (requires `pip install glas\\[ai]`)."
 )
 app.add_typer(ai_app, name="ai")
+calibrate_app = typer.Typer(help="Compute and save a pixel-to-millimeter spatial calibration.")
+app.add_typer(calibrate_app, name="calibrate")
 
 logger = get_logger(__name__)
 
@@ -322,6 +348,107 @@ def gui(
     raise typer.Exit(code=gui_main(base_dir))
 
 
+@app.command("doctor")
+def doctor(
+    data_dir: Path = typer.Argument(..., help="Directory recordings will be written under."),
+    serial: str | None = typer.Option(
+        None, "--serial", help="Serial number of the camera to connect to, if more than one."
+    ),
+    calibration_path: Path | None = typer.Option(
+        None, "--calibration", help="Spatial calibration file to check for."
+    ),
+    min_disk_free_gb: float = typer.Option(
+        DEFAULT_MIN_DISK_FREE_GB, "--min-disk-free-gb", help="Minimum acceptable free disk space."
+    ),
+    min_sharpness: float = typer.Option(
+        DEFAULT_MIN_SHARPNESS,
+        "--min-sharpness",
+        help="Minimum acceptable focus score (variance of the Laplacian).",
+    ),
+) -> None:
+    """Run preflight checks before recording: disk space, camera, exposure, gain, and focus."""
+    camera = Camera()
+    try:
+        camera.connect(serial_number=serial)
+    except (CameraNotFoundError, CameraConnectionError, CameraDriverError) as exc:
+        typer.echo(f"Could not connect to camera: {exc}", err=True)
+
+    try:
+        result = run_preflight_checks(
+            camera,
+            data_dir,
+            calibration_path=calibration_path,
+            min_disk_free_gb=min_disk_free_gb,
+            min_sharpness=min_sharpness,
+        )
+    finally:
+        if camera.is_connected:
+            camera.disconnect()
+
+    for item in result.items:
+        status = "OK" if item.passed else "FAIL"
+        typer.echo(f"[{status}] {item.name}: {item.message}")
+
+    if not result.all_passed:
+        raise typer.Exit(code=1)
+
+
+@calibrate_app.command("two-point")
+def calibrate_two_point(
+    x1: float = typer.Argument(..., help="First reference point's x pixel coordinate."),
+    y1: float = typer.Argument(..., help="First reference point's y pixel coordinate."),
+    x2: float = typer.Argument(..., help="Second reference point's x pixel coordinate."),
+    y2: float = typer.Argument(..., help="Second reference point's y pixel coordinate."),
+    distance_mm: float = typer.Argument(
+        ..., help="Real-world distance between the two points, in millimeters."
+    ),
+    output_path: Path = typer.Option(
+        ..., "--output", "-o", help="Destination calibration JSON file."
+    ),
+) -> None:
+    """Compute a spatial calibration from two pixel points a known real-world distance apart."""
+    try:
+        calibration = calibrate_from_known_distance((x1, y1), (x2, y2), distance_mm)
+    except CalibrationError as exc:
+        typer.echo(f"Calibration failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    save_calibration(calibration, output_path)
+    typer.echo(f"mm_per_pixel = {calibration.mm_per_pixel:.6f}")
+    typer.echo(f"Wrote {output_path}")
+
+
+@calibrate_app.command("checkerboard")
+def calibrate_checkerboard(
+    image_path: Path = typer.Argument(..., help="Image containing the full checkerboard pattern."),
+    columns: int = typer.Argument(..., help="Number of internal checkerboard corners across."),
+    rows: int = typer.Argument(..., help="Number of internal checkerboard corners down."),
+    square_size_mm: float = typer.Argument(
+        ..., help="Physical size of one checkerboard square's side, in millimeters."
+    ),
+    output_path: Path = typer.Option(
+        ..., "--output", "-o", help="Destination calibration JSON file."
+    ),
+) -> None:
+    """Compute a spatial calibration from a checkerboard pattern of known square size."""
+    image = cv2.imread(str(image_path))
+    if image is None:
+        typer.echo(f"Could not read image {image_path}.", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        calibration = calibrate_from_checkerboard(
+            cast("NDArray[np.integer]", image), (columns, rows), square_size_mm
+        )
+    except CalibrationError as exc:
+        typer.echo(f"Calibration failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    save_calibration(calibration, output_path)
+    typer.echo(f"mm_per_pixel = {calibration.mm_per_pixel:.6f}")
+    typer.echo(f"Wrote {output_path}")
+
+
 @experiment_app.command("list")
 def experiment_list(
     base_dir: Path = typer.Argument(..., help="Directory experiment folders live under."),
@@ -458,6 +585,87 @@ def analyze(
     if csv_output is not None:
         row_count = export_tracks_csv(history, csv_output)
         typer.echo(f"Wrote {row_count} row(s) to {csv_output}.")
+
+
+@app.command("qa")
+def qa(
+    dataset_folder: Path = typer.Argument(..., help="Dataset folder to assess."),
+    expected_fps: float | None = typer.Option(
+        None, "--expected-fps", help="Expected frame rate; large deviations are flagged."
+    ),
+    min_area: float = typer.Option(
+        DEFAULT_MIN_AREA, "--min-area", help="Minimum blob area, in pixels, to count as a particle."
+    ),
+    strict: bool = typer.Option(
+        False, "--strict", help="Exit with a nonzero status if any warning is found."
+    ),
+) -> None:
+    """Assess a finalized recording's structural integrity and scientific data quality."""
+    try:
+        result = assess_recording_quality(
+            dataset_folder, expected_fps=expected_fps, min_area=min_area
+        )
+    except (DatasetError, DatasetFormatError, DatasetIOError, JSONValidationError) as exc:
+        typer.echo(f"Quality assessment failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"Frames: {result.frame_count}")
+    typer.echo(f"Dropped frames: {result.dropped_frame_count}")
+    typer.echo(
+        f"Mean frame rate: {result.mean_fps:.2f} fps (jitter {result.fps_jitter_percent:.1f}%)"
+    )
+    typer.echo(
+        f"Particle count: mean={result.mean_particle_count:.1f} "
+        f"min={result.min_particle_count} max={result.max_particle_count} "
+        f"(sampled {result.sampled_frame_count} frame(s))"
+    )
+    if result.is_clean:
+        typer.echo("No issues found.")
+    else:
+        for warning in result.warnings:
+            typer.echo(f"WARNING: {warning}")
+        if strict:
+            raise typer.Exit(code=1)
+
+
+@app.command("report")
+def report(
+    dataset_folder: Path = typer.Argument(..., help="Dataset folder to generate a report for."),
+    output_path: Path = typer.Argument(..., help="Destination HTML file."),
+    accelerometer_csv: Path | None = typer.Option(
+        None,
+        "--accelerometer-csv",
+        help="Accelerometer CSV to include a Vibration section for.",
+    ),
+    max_distance: float = typer.Option(
+        DEFAULT_MAX_DISTANCE,
+        "--max-distance",
+        help="Max pixel distance to link a detection onto an existing track.",
+    ),
+    max_gap: int = typer.Option(
+        DEFAULT_MAX_GAP,
+        "--max-gap",
+        help="Frames a track may go unmatched before it's retired.",
+    ),
+    min_area: float = typer.Option(
+        DEFAULT_MIN_AREA, "--min-area", help="Minimum blob area, in pixels, to count as a particle."
+    ),
+) -> None:
+    """Generate a self-contained HTML report covering every analysis for one recording."""
+    try:
+        generate_report(
+            dataset_folder,
+            output_path,
+            accelerometer_csv=accelerometer_csv,
+            max_distance=max_distance,
+            max_gap=max_gap,
+            min_area=min_area,
+        )
+    except ReportError as exc:
+        typer.echo(f"Report generation failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"Report saved to {output_path}")
 
 
 def _describe_ai_dependency_error(exc: AIDependencyError) -> None:
@@ -1091,6 +1299,130 @@ def segregation(
     typer.echo(f"Mean mixing entropy: {sum(entropy) / len(entropy):.4f}")
     if plot is not None:
         typer.echo(f"Plot saved to {plot}")
+
+
+def _metric_brazil_nut_rise_time(folder: Path) -> float:
+    trajectory = analyze_brazil_nut(folder)
+    if trajectory.rise_time_s is None:
+        raise BrazilNutError("Rise time not reached within the recording.")
+    return trajectory.rise_time_s
+
+
+def _metric_brazil_nut_mean_velocity(folder: Path) -> float:
+    return analyze_brazil_nut(folder).mean_velocity_px_s
+
+
+def _metric_packing_fraction(folder: Path) -> float:
+    summary = analyze_packing(folder)
+    if not summary.metrics:
+        raise PackingError("No packing metrics computed (no frames?).")
+    return summary.metrics[-1].packing_fraction
+
+
+def _metric_segregation_index(folder: Path) -> float:
+    summary = analyze_segregation(folder)
+    if not summary.metrics:
+        raise SegregationError("No segregation metrics computed (no frames?).")
+    return summary.metrics[-1].segregation_index
+
+
+def _metric_convection_circulation(folder: Path) -> float:
+    summary = analyze_convection(folder)
+    if not summary.circulations:
+        raise ConvectionError("No circulation computed (too few frames?).")
+    return summary.circulations[-1]
+
+
+_COMPARISON_PARAMETERS: dict[str, Callable[[DatasetMetadata], float | None]] = {
+    "target-acceleration-g": lambda md: get_physical_parameters(md).target_acceleration_g,
+    "frequency-hz": lambda md: get_physical_parameters(md).frequency_hz,
+    "amplitude-mm": lambda md: get_physical_parameters(md).amplitude_mm,
+    "fill-depth-mm": lambda md: get_physical_parameters(md).fill_depth_mm,
+    "grain-diameter-mm": lambda md: get_physical_parameters(md).grain_diameter_mm,
+}
+
+_COMPARISON_METRICS: dict[str, Callable[[Path], float]] = {
+    "brazil-nut-rise-time": _metric_brazil_nut_rise_time,
+    "brazil-nut-mean-velocity": _metric_brazil_nut_mean_velocity,
+    "packing-fraction": _metric_packing_fraction,
+    "segregation-index": _metric_segregation_index,
+    "convection-circulation": _metric_convection_circulation,
+}
+
+
+@app.command("compare")
+def compare(
+    base_dir: Path = typer.Argument(..., help="Directory experiment folders live under."),
+    parameter: str = typer.Option(
+        ...,
+        "--parameter",
+        help=f"Independent variable: one of {', '.join(_COMPARISON_PARAMETERS)}.",
+    ),
+    metric: str = typer.Option(
+        ..., "--metric", help=f"Dependent variable: one of {', '.join(_COMPARISON_METRICS)}."
+    ),
+    tag: str | None = typer.Option(None, "--tag", help="Only compare experiments with this tag."),
+    name: str | None = typer.Option(
+        None, "--name", help="Only compare experiments whose name contains this."
+    ),
+    plot_output: Path | None = typer.Option(
+        None, "--plot", help="Write a comparison plot to this file."
+    ),
+    csv_output: Path | None = typer.Option(
+        None, "--csv", help="Write per-parameter-value summary statistics to this CSV file."
+    ),
+    no_fit: bool = typer.Option(False, "--no-fit", help="Skip the linear fit."),
+) -> None:
+    """Compare a metric across many recordings, grouped by a physical parameter."""
+    if parameter not in _COMPARISON_PARAMETERS:
+        typer.echo(
+            f"Unknown --parameter {parameter!r}; expected one of "
+            f"{', '.join(_COMPARISON_PARAMETERS)}.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    if metric not in _COMPARISON_METRICS:
+        typer.echo(
+            f"Unknown --metric {metric!r}; expected one of {', '.join(_COMPARISON_METRICS)}.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    manager = ExperimentManager(base_dir)
+    summaries = manager.search_experiments(name_contains=name, tag=tag)
+
+    try:
+        result = compare_runs(
+            summaries,
+            _COMPARISON_PARAMETERS[parameter],
+            _COMPARISON_METRICS[metric],
+            parameter_name=parameter,
+            metric_name=metric,
+            compute_fit=not no_fit,
+        )
+    except ValueError as exc:
+        typer.echo(f"Comparison failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    for point in result.points:
+        typer.echo(
+            f"{parameter}={point.parameter_value}: n={point.stats.n} "
+            f"mean={point.stats.mean:.4f} +/- {point.stats.sem:.4f} "
+            f"(95% CI [{point.stats.ci_low:.4f}, {point.stats.ci_high:.4f}])"
+        )
+    if result.fit is not None:
+        typer.echo(
+            f"Linear fit: {metric} = {result.fit.slope:.4f} * {parameter} + "
+            f"{result.fit.intercept:.4f} (R^2={result.fit.r_squared:.4f}, "
+            f"p={result.fit.p_value:.4g})"
+        )
+
+    if plot_output is not None:
+        plot_parameter_sweep(result, plot_output)
+        typer.echo(f"Plot saved to {plot_output}")
+    if csv_output is not None:
+        row_count = export_sweep_csv(result, csv_output)
+        typer.echo(f"Wrote {row_count} row(s) to {csv_output}.")
 
 
 @accelerometer_app.command("analyze")
