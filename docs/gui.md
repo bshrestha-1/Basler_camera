@@ -37,7 +37,7 @@ install hint rather than making `import glas.cli` itself require Qt.
 ## Launching the GUI
 
 ```bash
-pip install glas[gui]
+pip install -e ".[gui,ai]"
 glas gui ~/glas_data
 ```
 
