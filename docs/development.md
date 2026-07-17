@@ -8,8 +8,11 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-This installs GLAS in editable mode plus the development tools: `pytest`,
-`pytest-cov`, `ruff`, and `mypy`.
+This installs GLAS in editable mode plus the development tools:
+`pytest`, `pytest-cov`, `pytest-qt`, `ruff`, `mypy`, and every optional
+dependency (`PySide6` for the GUI; `torch`/`ultralytics`/`sam2` for the
+AI package) so the full test suite, including GUI and AI tests, runs
+without extra setup.
 
 ## Running the test suite
 
@@ -98,7 +101,24 @@ src/glas/            Package source (importable as `import glas`)
   analysis/                        Particle detection and tracking
     __init__.py
     tracking_utils.py               Pure detection/linking functions
-    particle_tracking.py            ParticleTracker, track_dataset()
+    particle_tracking.py            ParticleTracker, track_dataset(), export_tracks_csv()
+  hardware/                         Lab instrument integration (SCPI, DAQ)
+  accelerometer.py                  Vibration import, analysis, frame sync
+  gui/                              PySide6/Qt6 desktop GUI (optional: `pip install glas[gui]`)
+    theme.py                          Dark palette
+    logging_bridge.py                 logging -> Qt signal bridge
+    app.py                            Entry point (glas gui)
+    main_window.py                    Assembles every widget into docks
+    viewmodels/                       QObject wrappers around the backend
+    widgets/                          QWidget views, no business logic
+    ai_dialog.py                      Missing-AI-dependency dialog
+  ai/                               YOLO/SAM2 (optional: `pip install glas[ai]`)
+    dependencies.py                   Lazy imports, missing-dependency detection
+    annotation.py                     YOLO dataset bootstrap/annotation
+    yolo_detector.py                  YoloParticleDetector, track_dataset_yolo()
+    yolo_train.py                     train_yolo(), validate_yolo(), export_yolo_model()
+    sam2_segmenter.py                 Sam2Segmenter, shape metrics, contact area
+    sam2_train.py                     SAM2 dataset bootstrap and fine-tuning
 tests/               pytest test suite, one file per src module
 docs/                Project documentation
 .github/workflows/    CI (ci.yml)

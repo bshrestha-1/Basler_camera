@@ -2,9 +2,9 @@
 
 This is a lab-operator's walkthrough of GLAS end to end: install it,
 record an experiment, watch it live, keep an eye on performance, export
-the footage, track particles, and find it again later. For per-module API
-reference, see the other files in `docs/`; this page is about the
-workflow that ties them together.
+the footage, track particles (classically or with AI), and find it again
+later. For per-module API reference, see the other files in `docs/`; this
+page is about the workflow that ties them together.
 
 ## 1. Install
 
@@ -28,6 +28,14 @@ If you don't have a physical camera handy (e.g. developing on a laptop),
 pypylon ships a built-in camera emulator. Set `PYLON_CAMEMU=1` in your
 shell before running any `glas` command and everything below works
 identically against a simulated device.
+
+Everything in this walkthrough is also available from the desktop GUI
+(`pip install -e ".[gui]"`, then `glas gui ~/glas_data`) -- a live
+preview, camera and recording controls, an experiment metadata form,
+hardware status, an analysis panel, a dataset browser, and a log
+console, all built on the exact same backend these CLI commands use.
+See [`gui.md`](gui.md) for the full panel-by-panel tour; the rest of
+this page sticks to the CLI.
 
 ## 2. Record an experiment
 
@@ -145,11 +153,44 @@ This is the foundation the Brazil nut analysis builds its own
 measurements on top of (convection, packing, and segregation are the
 exceptions -- convection works directly on bulk pixel motion, packing
 and segregation work on per-frame detections, none of them need
-tracking; see steps 8-10). See [`analysis.md`](analysis.md) for detection
+tracking; see steps 9-11). See [`analysis.md`](analysis.md) for detection
 parameters (thresholding, `invert`, area filters) and tracking parameters
 (`max_distance`, `max_gap`).
 
-## 7. Measure the Brazil nut effect
+## 7. Detect, classify, and segment particles with AI
+
+Classical blob detection above works well for well-lit, non-overlapping
+particles of a single material. For poor lighting, heavy overlap, mixed
+particle types, or automatic intruder identification, train (or load a
+pretrained) YOLO model instead -- and refine any detection into an exact
+pixel mask with SAM2:
+
+```bash
+glas ai detect ~/glas_data/Run0001 glass_beads.pt --csv tracks.csv
+glas ai segment ~/glas_data/Run0001 glass_beads.pt --model-id facebook/sam2.1-hiera-large
+```
+
+or from Python:
+
+```python
+from glas.ai.yolo_detector import track_dataset_yolo
+
+history = track_dataset_yolo(Path("~/glas_data/Run0001").expanduser(), "glass_beads.pt")
+for track_id, observations in history.items():
+    last = observations[-1]
+    print(track_id, last.label, last.confidence, last.is_intruder)
+```
+
+`torch`/`ultralytics`/`sam2` are an optional dependency
+(`pip install "glas[ai]"`) -- everything else in GLAS, including this
+guide's earlier steps, works without them installed. `YoloDetection` is a
+`Detection` subclass, so YOLO output plugs directly into the same
+`ParticleTracker` from step 6 with no changes -- Brazil nut, packing, and
+segregation all work unchanged with YOLO-sourced tracks. See
+[`ai.md`](ai.md) for training a custom YOLO detector or fine-tuning SAM2
+on your own material.
+
+## 8. Measure the Brazil nut effect
 
 ```bash
 glas brazil-nut ~/glas_data/Run0001 --plot brazil_nut.png
@@ -170,7 +211,7 @@ rise time, and velocity are computed from each frame's real timestamp,
 not an assumed frame rate. See [`brazil-nut.md`](brazil-nut.md) for the
 full design.
 
-## 8. Measure convection
+## 9. Measure convection
 
 ```bash
 glas convection ~/glas_data/Run0001 --heatmap-dir flow_maps
@@ -192,7 +233,7 @@ exactly what convection rolls in a vibrated granular bed look like. See
 [`convection.md`](convection.md) for velocity fields, vorticity, and
 circulation.
 
-## 9. Measure packing fraction
+## 10. Measure packing fraction
 
 ```bash
 glas packing ~/glas_data/Run0001 --field-dir packing_maps --plot packing.png
@@ -213,7 +254,7 @@ void fraction, and number density are computed per frame directly from
 that frame's detections. See [`packing.md`](packing.md) for spatial
 fields and heat maps.
 
-## 10. Measure segregation
+## 11. Measure segregation
 
 ```bash
 glas segregation ~/glas_data/Run0001 --plot segregation.png
@@ -236,7 +277,80 @@ mixing index and a normalized mixing entropy. See
 [`segregation.md`](segregation.md) for the full design, including why
 `grid_spacing` needs to be chosen carefully.
 
-## 11. Find it again later
+## 12. Import and synchronize an accelerometer recording (optional)
+
+If you recorded a PCB 352C22 accelerometer alongside the camera (e.g.
+exported from a DAQ as a CSV), measure the vibration and align it with
+the frames:
+
+```bash
+glas accelerometer analyze shaker_run.csv --plot signal.png
+glas accelerometer sync shaker_run.csv ~/glas_data/Run0001 --output synced.csv
+```
+
+or from Python:
+
+```python
+from glas.accelerometer import analyze_vibration, import_accelerometer_csv, synchronize_with_frames
+from glas.dataset import iter_frames
+
+metrics = analyze_vibration(Path("shaker_run.csv").expanduser())
+print(f"{metrics.frequency_hz:.1f} Hz, Gamma={metrics.gamma:.2f}")
+
+recording = import_accelerometer_csv(Path("shaker_run.csv").expanduser())
+frames = list(iter_frames(Path("~/glas_data/Run0001").expanduser()))
+per_frame_g = synchronize_with_frames(recording, frames)
+```
+
+Synchronization here is a best-effort software alignment (assuming both
+recordings started at roughly the same moment, or a known `offset_s`
+apart). Wiring the camera to a hardware trigger line gives an exact
+common zero point instead -- see step 13. See
+[`accelerometer.md`](accelerometer.md) for the full design.
+
+## 13. Drive and monitor lab hardware (optional)
+
+If the experiment uses a Siglent SDG1032X function generator (directly,
+or driving a Modal Shop 2025E shaker), a LabJack or National Instruments
+DAQ, or a SCPI oscilloscope, GLAS can control them directly:
+
+```bash
+# Wire the camera to the generator's sync output for exact frame sync
+glas trigger enable --source Line1 --activation RisingEdge
+
+# Drive a shaker to a target Gamma (needs a calibration measured once
+# for the specific shaker/amplifier/fixture combination)
+glas shaker set-gamma 192.168.1.50 2.0 --volts-per-g 0.5 --calibration-frequency-hz 60 --start
+
+# Read a DAQ channel, or query an oscilloscope
+glas daq read labjack --channel 0
+glas oscilloscope query 192.168.1.60 "*IDN?"
+```
+
+or from Python, for the same operations with more control:
+
+```python
+from glas.camera import Camera
+from glas.hardware.scpi import SocketSCPITransport
+from glas.hardware.shaker import ShakerCalibration, ShakerController
+from glas.hardware.waveform_generator import SiglentSDG1032X
+
+camera = Camera()
+camera.connect()
+camera.enable_hardware_trigger(source="Line1", activation="RisingEdge")
+
+generator = SiglentSDG1032X(SocketSCPITransport("192.168.1.50"))
+shaker = ShakerController(generator, ShakerCalibration(volts_per_g=0.5, frequency_hz=60.0))
+shaker.set_target_gamma(2.0)
+shaker.start()
+```
+
+Every hardware class is built so its own command-building and
+error-handling logic is unit-testable without physical hardware -- see
+[`hardware.md`](hardware.md) for the full design, including why the
+Modal Shop 2025E itself has no digital protocol to talk to.
+
+## 14. Find it again later
 
 ```bash
 glas experiment list ~/glas_data --tag brazil-nut
@@ -272,4 +386,6 @@ reference.
   pixel format) and hardware timestamps.
 - [`docs/dataset.md`](dataset.md) -- on-disk layout, checksums, and
   `validate_dataset()`.
+- [`docs/gui.md`](gui.md) -- the desktop GUI, panel by panel.
+- [`docs/ai.md`](ai.md) -- training and using YOLO/SAM2 models.
 - [`docs/development.md`](development.md) -- contributing to GLAS itself.

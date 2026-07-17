@@ -4,6 +4,17 @@ A production-quality acquisition and analysis platform built around a
 Basler ace acA640-750um camera, for granular-material physics experiments.
 """
 
+from glas.accelerometer import (
+    AccelerometerRecording,
+    VibrationMetrics,
+    analyze_vibration,
+    compute_gamma,
+    compute_vibration_amplitude,
+    compute_vibration_frequency,
+    import_accelerometer_csv,
+    plot_vibration_signal,
+    synchronize_with_frames,
+)
 from glas.acquisition import Acquisition, AcquisitionStats
 from glas.analysis import (
     BrazilNutTrajectory,
@@ -60,6 +71,7 @@ from glas.dataset import (
 )
 from glas.display import PreviewWindow, render_frame, render_histogram
 from glas.exceptions import (
+    AccelerometerError,
     AcquisitionError,
     BrazilNutError,
     CameraConfigurationError,
@@ -77,6 +89,9 @@ from glas.exceptions import (
     ExperimentNotFoundError,
     ExportError,
     GLASError,
+    HardwareError,
+    InstrumentCommandError,
+    InstrumentConnectionError,
     JSONValidationError,
     LoggingError,
     PackingError,
@@ -94,6 +109,19 @@ from glas.experiment import (
 )
 from glas.export import ExportFormat, ExportResult, export_dataset
 from glas.frame import Frame, pixel_format_dtype
+from glas.hardware import (
+    DEFAULT_SCPI_PORT,
+    AnalogInputDAQ,
+    LabJackDAQ,
+    NiDAQ,
+    SCPIInstrument,
+    SCPIOscilloscope,
+    SCPITransport,
+    ShakerCalibration,
+    ShakerController,
+    SiglentSDG1032X,
+    SocketSCPITransport,
+)
 from glas.logger import configure_logging, get_logger
 from glas.metadata import DatasetMetadata, load_metadata_json, save_metadata_json
 from glas.monitor import PerformanceMonitor, PerformanceSnapshot
@@ -132,6 +160,10 @@ __all__ = [
     "ConvectionError",
     "PackingError",
     "SegregationError",
+    "AccelerometerError",
+    "HardwareError",
+    "InstrumentConnectionError",
+    "InstrumentCommandError",
     "configure_logging",
     "get_logger",
     "Settings",
@@ -216,4 +248,24 @@ __all__ = [
     "compute_segregation_metrics",
     "plot_segregation_summary",
     "analyze_segregation",
+    "AccelerometerRecording",
+    "VibrationMetrics",
+    "import_accelerometer_csv",
+    "compute_vibration_frequency",
+    "compute_gamma",
+    "compute_vibration_amplitude",
+    "plot_vibration_signal",
+    "analyze_vibration",
+    "synchronize_with_frames",
+    "DEFAULT_SCPI_PORT",
+    "SCPITransport",
+    "SocketSCPITransport",
+    "SCPIInstrument",
+    "SiglentSDG1032X",
+    "SCPIOscilloscope",
+    "ShakerCalibration",
+    "ShakerController",
+    "AnalogInputDAQ",
+    "LabJackDAQ",
+    "NiDAQ",
 ]

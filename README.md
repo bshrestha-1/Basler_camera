@@ -6,19 +6,20 @@ research (Brazil nut effect, convection, packing fraction, segregation,
 and related studies). It is developed in phases, each shipped as a fully
 tested, documented, production-ready release.
 
-**Current release: Phase 15 — Segregation Analysis (v1.5.0).**
-GLAS can now measure how separated two particle populations are — the
-standard diagnostic for size segregation in a vibrated bidisperse
-granular bed: `glas.analysis.compute_segregation_metrics()` splits each
-frame's detections into "large"/"small" populations by radius and
-computes Lacey's mixing index, its complement (segregation index), and a
-normalized Shannon mixing entropy, comparing each spatial cell's local
-composition against the bed's overall composition, and
-`glas.analysis.plot_segregation_summary()` renders a time-series plot —
-`glas.analysis.analyze_segregation()` (or `glas segregation` from the
-command line) runs the whole pipeline over a recorded dataset in one
-call — see [`docs/segregation.md`](docs/segregation.md) or
-[`CHANGELOG.md`](CHANGELOG.md) for details.
+**Current release: Phase 19 — AI Analysis: YOLO / SAM2 (v2.5.0).**
+GLAS now detects, classifies, and pixel-exactly segments particles with
+trained YOLO and SAM2 models, alongside the existing classical
+blob-detection pipeline: YOLO detects and classifies every particle
+(including automatic intruder identification) even under poor lighting
+or heavy overlap, and SAM2 refines each detection into an exact mask for
+area, perimeter, orientation, aspect ratio, contact area, packing
+fraction, and void fraction. Both models support full training pipelines
+as well as inference-only use with pretrained weights. `torch`/
+`ultralytics`/`sam2` stay an optional dependency (`pip install
+"glas[ai]"`) -- `import glas` and every other CLI command/GUI panel work
+without them installed. Try it with `glas ai detect` / `glas ai segment`,
+or the GUI's new Detection/Segmentation tabs — see
+[`docs/ai.md`](docs/ai.md) or [`CHANGELOG.md`](CHANGELOG.md) for details.
 
 ## Installation
 
@@ -28,6 +29,18 @@ cd basler_camera
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
+```
+
+For the desktop GUI:
+
+```bash
+pip install -e ".[gui]"
+```
+
+For AI-based detection (YOLO) and segmentation (SAM2):
+
+```bash
+pip install -e ".[ai]"
 ```
 
 For development (tests, linting, type checking):
@@ -60,6 +73,12 @@ glas export ~/glas_data/Run0001 ~/glas_data/Run0001.mp4 --format mp4
 # Detect and track particles across the recording
 glas analyze ~/glas_data/Run0001
 
+# Detect, classify, and track particles with a trained YOLO model
+glas ai detect ~/glas_data/Run0001 glass_beads.pt --csv tracks.csv
+
+# Segment every particle's exact outline with YOLO + SAM2
+glas ai segment ~/glas_data/Run0001 glass_beads.pt --model-id facebook/sam2.1-hiera-large
+
 # Measure the Brazil nut effect: height, rise time, velocity, and a plot
 glas brazil-nut ~/glas_data/Run0001 --plot brazil_nut.png
 
@@ -71,6 +90,19 @@ glas packing ~/glas_data/Run0001 --field-dir packing_maps --plot packing.png
 
 # Measure segregation index, mixing index, and mixing entropy
 glas segregation ~/glas_data/Run0001 --plot segregation.png
+
+# Analyze an accelerometer recording, and synchronize it with the frames
+glas accelerometer analyze shaker_run.csv --plot signal.png
+glas accelerometer sync shaker_run.csv ~/glas_data/Run0001 --output synced.csv
+
+# Drive lab hardware: camera trigger, shaker, DAQ, oscilloscope
+glas trigger enable --source Line1 --activation RisingEdge
+glas shaker set-gamma 192.168.1.50 2.0 --volts-per-g 0.5 --calibration-frequency-hz 60
+glas daq read labjack --channel 0
+glas oscilloscope query 192.168.1.60 "*IDN?"
+
+# Or launch the desktop GUI (pip install -e ".[gui]" first)
+glas gui ~/glas_data
 ```
 
 See [`docs/getting-started.md`](docs/getting-started.md) for the full
@@ -438,10 +470,120 @@ median, or explicit) and computes Lacey's mixing index, its complement
 [`docs/segregation.md`](docs/segregation.md) for the full design,
 including why `grid_spacing` needs to be chosen carefully.
 
+### Accelerometer import and synchronization
+
+Import a PCB 352C22 accelerometer recording, compute its vibration
+frequency, displacement amplitude, and Gamma, and align it with a
+recorded camera dataset's frames:
+
+```python
+from glas.accelerometer import analyze_vibration, import_accelerometer_csv, synchronize_with_frames
+from glas.dataset import iter_frames
+
+metrics = analyze_vibration(Path("shaker_run.csv"), plot_path=Path("signal.png"))
+print(f"{metrics.frequency_hz:.1f} Hz, Gamma={metrics.gamma:.2f}")
+
+recording = import_accelerometer_csv(Path("shaker_run.csv"))
+per_frame_g = synchronize_with_frames(recording, list(iter_frames(dataset.folder)))
+```
+
+or from the command line:
+
+```bash
+glas accelerometer analyze shaker_run.csv --plot signal.png
+glas accelerometer sync shaker_run.csv ~/glas_data/Run0001 --output synced.csv
+```
+
+`compute_gamma()` returns the dimensionless vibration intensity
+`Gamma = peak acceleration / g`, the standard control parameter for a
+vibrated granular bed; `synchronize_with_frames()` finds the nearest
+accelerometer sample in time for each frame, assuming the two recordings
+started at the same moment unless an explicit `offset_s` is given (wiring
+the camera to a hardware trigger, below, gives an exact common zero point
+instead). See [`docs/accelerometer.md`](docs/accelerometer.md) for the
+full design.
+
+### Hardware integration
+
+Camera hardware triggering, a Siglent SDG1032X function generator, a
+Modal Shop 2025E shaker (driven via the generator), LabJack/NI DAQ
+devices, and a generic SCPI oscilloscope:
+
+```python
+from glas.camera import Camera
+from glas.hardware.scpi import SocketSCPITransport
+from glas.hardware.shaker import ShakerCalibration, ShakerController
+from glas.hardware.waveform_generator import SiglentSDG1032X
+
+camera = Camera()
+camera.connect()
+camera.enable_hardware_trigger(source="Line1", activation="RisingEdge")
+
+generator = SiglentSDG1032X(SocketSCPITransport("192.168.1.50"))
+shaker = ShakerController(generator, ShakerCalibration(volts_per_g=0.5, frequency_hz=60.0))
+shaker.set_target_gamma(2.0)
+```
+
+or from the command line:
+
+```bash
+glas trigger enable --source Line1 --activation RisingEdge
+glas shaker set-gamma 192.168.1.50 2.0 --volts-per-g 0.5 --calibration-frequency-hz 60
+glas daq read labjack --channel 0
+```
+
+Every class is built so its own logic is unit-testable without physical
+hardware: the SCPI-based classes take an injectable transport, the DAQ
+classes defer importing their vendor SDK until connection, and camera
+triggering extends the existing `Camera` and is tested against
+pypylon's built-in emulator. See [`docs/hardware.md`](docs/hardware.md)
+for the full design, including why the Modal Shop 2025E itself has no
+digital protocol to talk to.
+
+### AI: YOLO detection and SAM2 segmentation
+
+Detect, classify, and automatically identify intruders with a trained
+YOLO model, then refine any detection into an exact pixel mask with SAM2:
+
+```python
+from glas.ai.yolo_detector import track_dataset_yolo
+from glas.ai.sam2_segmenter import Sam2Segmenter, compute_segmentation_summary
+from glas.analysis.tracking_utils import detect_particles
+from glas.dataset import iter_frames
+
+history = track_dataset_yolo(dataset.folder, "glass_beads.pt")
+for track_id, observations in history.items():
+    last = observations[-1]
+    print(track_id, last.label, last.confidence, last.is_intruder)
+
+last_frame = list(iter_frames(dataset.folder))[-1]
+segmenter = Sam2Segmenter(model_id="facebook/sam2.1-hiera-large")
+segments = segmenter.segment_frame(last_frame.image, detect_particles(last_frame.image))
+summary = compute_segmentation_summary(segments, last_frame.image.shape[:2])
+print(summary.packing_fraction, summary.void_fraction, len(summary.contacts))
+```
+
+or from the command line:
+
+```bash
+glas ai detect ~/glas_data/Run0001 glass_beads.pt --csv tracks.csv
+glas ai segment ~/glas_data/Run0001 glass_beads.pt --model-id facebook/sam2.1-hiera-large
+```
+
+`YoloDetection` is a `Detection` subclass, so YOLO output plugs directly
+into the same `ParticleTracker` used above with no changes -- Brazil
+nut, packing, and segregation all work unchanged with YOLO-sourced
+tracks. Both models support full training pipelines too (`glas ai
+prepare-yolo-dataset`/`train-yolo`, `glas ai prepare-sam2-dataset`/
+`train-sam2`) -- see [`docs/ai.md`](docs/ai.md) for the full design,
+including how to fine-tune SAM2 on your own material.
+
 ## Project layout
 
 ```
 src/glas/          Package source (import glas)
+  ai/                Optional: YOLO detection, SAM2 segmentation (pip install glas[ai])
+  gui/               Optional: PySide6/Qt6 desktop GUI (pip install glas[gui])
 tests/              pytest unit tests (one file per module)
 docs/               Documentation
 pyproject.toml      Packaging, dependencies, tool configuration

@@ -48,6 +48,9 @@ DEFAULT_WINDOW_NAME = "GLAS Preview"
 _CROSSHAIR_COLOR_BGR = (0, 255, 0)
 _ROI_COLOR_BGR = (0, 0, 255)
 _FPS_TEXT_COLOR_BGR = (0, 255, 255)
+_GRID_COLOR_BGR = (80, 80, 80)
+_GRID_SPACING_PX = 50
+_TIMESTAMP_TEXT_COLOR_BGR = (255, 255, 255)
 _HISTOGRAM_BAR_COLOR = 255
 _HISTOGRAM_BACKGROUND = 0
 
@@ -101,6 +104,8 @@ def render_frame(
     crosshair_position: tuple[int, int] | None = None,
     roi: ROI | None = None,
     fps: float | None = None,
+    overlay_grid: bool = False,
+    timestamp_text: str | None = None,
 ) -> NDArray[np.uint8]:
     """Render a frame to a displayable BGR image, with optional overlays.
 
@@ -125,6 +130,13 @@ def render_frame(
         original (pre-zoom) pixel coordinates.
     fps : float, optional
         If given, draw this value as on-screen FPS text.
+    overlay_grid : bool, default False
+        Whether to draw an evenly-spaced reference grid over the image.
+    timestamp_text : str, optional
+        If given, draw this exact string as on-screen text (bottom-left).
+        Callers decide the formatting (e.g. a wall-clock time derived from
+        :class:`~glas.timestamps.WallClockReference`) -- this function only
+        draws whatever it is handed.
 
     Returns
     -------
@@ -138,6 +150,12 @@ def render_frame(
     offset_x = clamped_zoom.x if clamped_zoom is not None else 0
     offset_y = clamped_zoom.y if clamped_zoom is not None else 0
     height, width = image.shape[0], image.shape[1]
+
+    if overlay_grid:
+        for x in range(0, width, _GRID_SPACING_PX):
+            cv2.line(image, (x, 0), (x, height - 1), _GRID_COLOR_BGR, 1)
+        for y in range(0, height, _GRID_SPACING_PX):
+            cv2.line(image, (0, y), (width - 1, y), _GRID_COLOR_BGR, 1)
 
     if crosshair and crosshair_position is not None:
         x = crosshair_position[0] - offset_x
@@ -160,6 +178,18 @@ def render_frame(
             cv2.FONT_HERSHEY_SIMPLEX,
             0.6,
             _FPS_TEXT_COLOR_BGR,
+            1,
+            cv2.LINE_AA,
+        )
+
+    if timestamp_text is not None:
+        cv2.putText(
+            image,
+            timestamp_text,
+            (5, height - 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            _TIMESTAMP_TEXT_COLOR_BGR,
             1,
             cv2.LINE_AA,
         )
@@ -272,6 +302,7 @@ class PreviewWindow:
             crosshair_position=self._preview.crosshair_position,
             roi=roi if self._preview.show_roi else None,
             fps=self._preview.fps(),
+            overlay_grid=self._preview.overlay_grid,
         )
         cv2.imshow(self._window_name, image)
         self._open = True

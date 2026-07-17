@@ -169,3 +169,48 @@ class PackingError(GLASError):
 
 class SegregationError(GLASError):
     """Raised when segregation analysis cannot be performed."""
+
+
+class AccelerometerError(GLASError):
+    """Raised when accelerometer data cannot be imported, analyzed, or synchronized."""
+
+
+class HardwareError(GLASError):
+    """Base class for all lab-instrument (non-camera) hardware exceptions."""
+
+
+class InstrumentConnectionError(HardwareError):
+    """Raised when a lab instrument (function generator, DAQ, oscilloscope) cannot be reached.
+
+    Covers both a missing vendor driver/SDK (e.g. LabJack's ``labjack-ljm``
+    or National Instruments' ``nidaqmx``, neither a hard dependency of
+    GLAS) and transport-level failures (a SCPI socket that won't connect,
+    a DAQ device that doesn't respond).
+    """
+
+
+class InstrumentCommandError(HardwareError):
+    """Raised when an instrument rejects a command or returns an unexpected response."""
+
+
+class AIError(GLASError):
+    """Base class for all AI (YOLO detection, SAM2 segmentation) exceptions."""
+
+
+class AIDependencyError(AIError):
+    """Raised when an AI feature is used without its optional dependencies installed.
+
+    Covers ``torch``, ``ultralytics`` (YOLO), and ``sam2`` (SAM2) -- none
+    are a hard dependency of GLAS. Install all of them with
+    ``pip install glas[ai]``. The message always names exactly which
+    package is missing and the install command that fixes it, since the
+    GUI surfaces this text directly in a dialog.
+    """
+
+
+class AIModelError(AIError):
+    """Raised when an AI model fails to load, cannot run inference, or training fails."""
+
+
+class AIDatasetError(AIError):
+    """Raised when preparing a YOLO/SAM2 training dataset (annotation, split, export) fails."""

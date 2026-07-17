@@ -46,8 +46,12 @@ class Detection(BaseModel):
     area: float = Field(ge=0)
 
 
-def _to_uint8_mono(image: NDArray[np.integer]) -> NDArray[np.uint8]:
-    """Scale an arbitrary-dtype mono image to 8-bit, for cv2's 8-bit-only Otsu threshold."""
+def to_uint8_mono(image: NDArray[np.integer]) -> NDArray[np.uint8]:
+    """Scale an arbitrary-dtype mono image to 8-bit, for cv2's 8-bit-only Otsu threshold.
+
+    Shared with :mod:`glas.ai.sam2_train`, which needs the same
+    thresholding preprocessing to bootstrap SAM2 mask ground truth.
+    """
     if image.dtype == np.uint8:
         return cast("NDArray[np.uint8]", image)
     max_value = np.iinfo(image.dtype).max
@@ -96,7 +100,7 @@ def detect_particles(
         One entry per detected blob, in contour-scan order (top-to-bottom,
         left-to-right). Empty if nothing passes the area filter.
     """
-    mono = _to_uint8_mono(image)
+    mono = to_uint8_mono(image)
 
     threshold_type = cv2.THRESH_BINARY_INV if invert else cv2.THRESH_BINARY
     if threshold is None:

@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 
 import cv2
 import numpy as np
 import pytest
 
-from glas.analysis.particle_tracking import ParticleTracker, TrackedParticle, track_dataset
+from glas.analysis.particle_tracking import (
+    ParticleTracker,
+    TrackedParticle,
+    export_tracks_csv,
+    track_dataset,
+)
 from glas.analysis.tracking_utils import Detection
 from glas.dataset import Dataset
 from glas.frame import Frame
@@ -17,6 +23,19 @@ from glas.metadata import DatasetMetadata
 
 def _detection(x: float, y: float) -> Detection:
     return Detection(x=x, y=y, radius=5.0, area=78.5)
+
+
+class _YoloLikeDetection(Detection):
+    """A minimal stand-in for glas.ai.yolo_detector.YoloDetection.
+
+    Duck-types the label/confidence/is_intruder attributes ParticleTracker
+    reads via getattr(), without importing glas.ai (keeping this test
+    module usable even without the optional AI dependencies installed).
+    """
+
+    label: str
+    confidence: float
+    is_intruder: bool = False
 
 
 class TestParticleTrackerConstruction:
@@ -203,3 +222,142 @@ class TestTrackDataset:
         # continuous trajectory.
         history = track_dataset(folder, max_distance=1.0)
         assert len(history) == 5
+
+
+class TestTrackedParticleClassificationFields:
+    def test_defaults_are_none_and_false_for_classical_detections(self) -> None:
+        tracker = ParticleTracker()
+        observed = tracker.update(0, [_detection(10, 10)])
+
+        assert observed[0].label is None
+        assert observed[0].confidence is None
+        assert observed[0].is_intruder is False
+
+    def test_yolo_like_detection_fields_propagate_onto_tracked_particle(self) -> None:
+        tracker = ParticleTracker()
+        detection = _YoloLikeDetection(
+            x=10, y=10, radius=5, area=78.5, label="glass_bead", confidence=0.87, is_intruder=False
+        )
+        observed = tracker.update(0, [detection])
+
+        assert observed[0].label == "glass_bead"
+        assert observed[0].confidence == pytest.approx(0.87)
+        assert observed[0].is_intruder is False
+
+    def test_intruder_flag_propagates(self) -> None:
+        tracker = ParticleTracker()
+        detection = _YoloLikeDetection(
+            x=10, y=10, radius=5, area=78.5, label="intruder", confidence=0.95, is_intruder=True
+        )
+        observed = tracker.update(0, [detection])
+
+        assert observed[0].is_intruder is True
+
+    def test_fields_are_preserved_across_frames_for_the_same_track(self) -> None:
+        tracker = ParticleTracker(max_distance=10.0)
+        tracker.update(
+            0, [_YoloLikeDetection(x=10, y=10, radius=5, area=78.5, label="a", confidence=0.5)]
+        )
+        observed = tracker.update(
+            1, [_YoloLikeDetection(x=12, y=11, radius=5, area=78.5, label="a", confidence=0.6)]
+        )
+
+        assert observed[0].track_id == 0
+        assert observed[0].label == "a"
+        assert observed[0].confidence == pytest.approx(0.6)
+
+
+class TestExportTracksCsv:
+    def test_returns_row_count(self, tmp_path: Path) -> None:
+        history = {
+            0: [
+                TrackedParticle(track_id=0, frame_id=0, x=1, y=1, radius=1, area=1),
+                TrackedParticle(track_id=0, frame_id=1, x=2, y=2, radius=1, area=1),
+            ],
+            1: [TrackedParticle(track_id=1, frame_id=0, x=5, y=5, radius=1, area=1)],
+        }
+        row_count = export_tracks_csv(history, tmp_path / "tracks.csv")
+        assert row_count == 3
+
+    def test_writes_expected_header(self, tmp_path: Path) -> None:
+        history = {0: [TrackedParticle(track_id=0, frame_id=0, x=1, y=1, radius=1, area=1)]}
+        output_path = tmp_path / "tracks.csv"
+        export_tracks_csv(history, output_path)
+
+        with output_path.open() as handle:
+            header = next(csv.reader(handle))
+        assert header == [
+            "track_id",
+            "frame_id",
+            "x",
+            "y",
+            "radius",
+            "area",
+            "host_timestamp_ns",
+            "label",
+            "confidence",
+            "is_intruder",
+        ]
+
+    def test_classical_tracking_rows_have_blank_label_and_confidence(self, tmp_path: Path) -> None:
+        history = {0: [TrackedParticle(track_id=0, frame_id=0, x=1, y=1, radius=1, area=1)]}
+        output_path = tmp_path / "tracks.csv"
+        export_tracks_csv(history, output_path)
+
+        with output_path.open() as handle:
+            rows = list(csv.DictReader(handle))
+        assert rows[0]["label"] == ""
+        assert rows[0]["confidence"] == ""
+        assert rows[0]["is_intruder"] == "False"
+
+    def test_yolo_tracking_rows_include_label_and_confidence(self, tmp_path: Path) -> None:
+        history = {
+            0: [
+                TrackedParticle(
+                    track_id=0,
+                    frame_id=0,
+                    x=1,
+                    y=1,
+                    radius=1,
+                    area=1,
+                    label="glass_bead",
+                    confidence=0.75,
+                    is_intruder=True,
+                )
+            ]
+        }
+        output_path = tmp_path / "tracks.csv"
+        export_tracks_csv(history, output_path)
+
+        with output_path.open() as handle:
+            rows = list(csv.DictReader(handle))
+        assert rows[0]["label"] == "glass_bead"
+        assert rows[0]["confidence"] == "0.75"
+        assert rows[0]["is_intruder"] == "True"
+
+    def test_rows_are_ordered_by_track_id(self, tmp_path: Path) -> None:
+        history = {
+            5: [TrackedParticle(track_id=5, frame_id=0, x=1, y=1, radius=1, area=1)],
+            1: [TrackedParticle(track_id=1, frame_id=0, x=2, y=2, radius=1, area=1)],
+        }
+        output_path = tmp_path / "tracks.csv"
+        export_tracks_csv(history, output_path)
+
+        with output_path.open() as handle:
+            rows = list(csv.DictReader(handle))
+        assert [row["track_id"] for row in rows] == ["1", "5"]
+
+    def test_creates_parent_directories(self, tmp_path: Path) -> None:
+        history = {0: [TrackedParticle(track_id=0, frame_id=0, x=1, y=1, radius=1, area=1)]}
+        output_path = tmp_path / "nested" / "dir" / "tracks.csv"
+        export_tracks_csv(history, output_path)
+        assert output_path.exists()
+
+    def test_empty_history_writes_header_only(self, tmp_path: Path) -> None:
+        output_path = tmp_path / "tracks.csv"
+        row_count = export_tracks_csv({}, output_path)
+        assert row_count == 0
+
+        with output_path.open() as handle:
+            rows = list(csv.reader(handle))
+        assert len(rows) == 1

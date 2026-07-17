@@ -33,6 +33,12 @@ glas.dataset.iter_frames() -> detect_particles() -> ParticleTracker -> trajector
   distribution, also built on per-frame detections (not tracking). See
   [`segregation.md`](segregation.md).
 
+For AI-based detection (YOLO) and pixel-exact segmentation (SAM2) as an
+alternative/complement to the classical `detect_particles()` pipeline
+above, see [`ai.md`](ai.md) -- `glas.ai.yolo_detector.YoloDetection` is a
+`Detection` subclass, so YOLO output plugs directly into
+`ParticleTracker` and every pipeline in this file with no changes.
+
 ## Quickstart
 
 ```python

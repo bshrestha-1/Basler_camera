@@ -121,6 +121,45 @@ def validate_gain(value: float, bounds: NumericRange) -> float:
     return value
 
 
+def validate_numeric_range(
+    value: float, bounds: NumericRange, *, field_name: str, unit: str = ""
+) -> float:
+    """Validate a proposed value against a device-reported numeric range.
+
+    A generic counterpart to :func:`validate_exposure_time`/
+    :func:`validate_gain` for camera parameters that don't warrant their
+    own named validator (gamma, frame rate, binning, ...).
+
+    Parameters
+    ----------
+    value : float
+        Proposed value.
+    bounds : NumericRange
+        Minimum and maximum supported by the device.
+    field_name : str
+        Human-readable name used in the error message, e.g. ``"gamma"``.
+    unit : str, optional
+        Unit suffix used in the error message, e.g. ``"Hz"``.
+
+    Returns
+    -------
+    float
+        ``value``, unchanged, if valid.
+
+    Raises
+    ------
+    CameraConfigurationError
+        If ``value`` is outside ``bounds``.
+    """
+    if not bounds.minimum <= value <= bounds.maximum:
+        suffix = f" {unit}" if unit else ""
+        raise CameraConfigurationError(
+            f"{field_name} {value}{suffix} is out of range "
+            f"[{bounds.minimum}, {bounds.maximum}]{suffix}."
+        )
+    return value
+
+
 def validate_pixel_format(value: str, allowed: Sequence[str]) -> str:
     """Validate a proposed pixel format against the device's supported set.
 

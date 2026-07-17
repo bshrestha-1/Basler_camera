@@ -66,6 +66,15 @@ class RecorderController:
         """The camera this controller manages."""
         return self._camera
 
+    @property
+    def base_data_dir(self) -> Path:
+        """Directory new experiment folders are created under."""
+        return self._base_data_dir
+
+    @base_data_dir.setter
+    def base_data_dir(self, value: Path) -> None:
+        self._base_data_dir = value
+
     def connect(self, serial_number: str | None = None) -> CameraInfo:
         """Connect the camera. See :meth:`glas.camera.Camera.connect`."""
         return self._camera.connect(serial_number=serial_number)

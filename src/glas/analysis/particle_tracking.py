@@ -10,6 +10,7 @@ pipeline over a finalized dataset folder in one call, the same role
 
 from __future__ import annotations
 
+import csv
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +22,19 @@ from glas.dataset import iter_frames
 
 DEFAULT_MAX_DISTANCE = 20.0
 DEFAULT_MAX_GAP = 0
+
+CSV_FIELDNAMES = [
+    "track_id",
+    "frame_id",
+    "x",
+    "y",
+    "radius",
+    "area",
+    "host_timestamp_ns",
+    "label",
+    "confidence",
+    "is_intruder",
+]
 
 
 class TrackedParticle(BaseModel):
@@ -47,6 +61,17 @@ class TrackedParticle(BaseModel):
         for computing real elapsed time between observations (see
         :mod:`glas.analysis.brazil_nut`), the same way it is on `Frame`
         itself -- not wall-clock time.
+    label : str, optional
+        Predicted particle class, if this observation came from a
+        :class:`~glas.ai.yolo_detector.YoloDetection` rather than
+        classical blob detection. ``None`` otherwise.
+    confidence : float, optional
+        Model confidence for ``label``, in ``[0, 1]``. ``None`` for
+        classical detections.
+    is_intruder : bool
+        Whether this observation was flagged as the Brazil-nut-style
+        intruder by a YOLO detector. Always ``False`` for classical
+        detections, which have no notion of particle class.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -58,6 +83,9 @@ class TrackedParticle(BaseModel):
     radius: float
     area: float
     host_timestamp_ns: int = 0
+    label: str | None = None
+    confidence: float | None = None
+    is_intruder: bool = False
 
 
 @dataclass
@@ -188,6 +216,9 @@ class ParticleTracker:
             radius=detection.radius,
             area=detection.area,
             host_timestamp_ns=host_timestamp_ns,
+            label=getattr(detection, "label", None),
+            confidence=getattr(detection, "confidence", None),
+            is_intruder=getattr(detection, "is_intruder", False),
         )
         self._history.setdefault(track_id, []).append(particle)
         return particle
@@ -236,3 +267,56 @@ def track_dataset(
         )
         tracker.update(frame.frame_id, detections, frame.host_timestamp_ns)
     return tracker.history
+
+
+def export_tracks_csv(history: dict[int, list[TrackedParticle]], output_path: Path) -> int:
+    """Write every tracked observation to a CSV file, one row per observation.
+
+    One row per :class:`TrackedParticle`, columns
+    ``track_id, frame_id, x, y, radius, area, host_timestamp_ns, label,
+    confidence, is_intruder``. ``label``/``confidence`` are blank for
+    classical (non-YOLO) tracking, since :func:`track_dataset` never sets
+    them -- the same format works for both :func:`track_dataset` and
+    :func:`glas.ai.yolo_detector.track_dataset_yolo` output, so a
+    downstream script never needs to know which one produced a given
+    file.
+
+    Parameters
+    ----------
+    history : dict of int to list of TrackedParticle
+        E.g. the return value of :func:`track_dataset` or
+        :func:`~glas.ai.yolo_detector.track_dataset_yolo`.
+    output_path : pathlib.Path
+        Destination CSV file. Parent directories are created if missing;
+        an existing file is overwritten.
+
+    Returns
+    -------
+    int
+        Number of rows written (total observations across every track).
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    count = 0
+    with output_path.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=CSV_FIELDNAMES)
+        writer.writeheader()
+        for track_id in sorted(history):
+            for particle in history[track_id]:
+                writer.writerow(
+                    {
+                        "track_id": particle.track_id,
+                        "frame_id": particle.frame_id,
+                        "x": particle.x,
+                        "y": particle.y,
+                        "radius": particle.radius,
+                        "area": particle.area,
+                        "host_timestamp_ns": particle.host_timestamp_ns,
+                        "label": particle.label if particle.label is not None else "",
+                        "confidence": particle.confidence
+                        if particle.confidence is not None
+                        else "",
+                        "is_intruder": particle.is_intruder,
+                    }
+                )
+                count += 1
+    return count

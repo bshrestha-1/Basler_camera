@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from glas.exceptions import (
+    AccelerometerError,
     BrazilNutError,
     ConfigurationError,
     ConvectionError,
@@ -12,6 +13,9 @@ from glas.exceptions import (
     ExperimentNotFoundError,
     ExportError,
     GLASError,
+    HardwareError,
+    InstrumentCommandError,
+    InstrumentConnectionError,
     JSONValidationError,
     LoggingError,
     PackingError,
@@ -34,6 +38,10 @@ from glas.exceptions import (
         ConvectionError,
         PackingError,
         SegregationError,
+        AccelerometerError,
+        HardwareError,
+        InstrumentConnectionError,
+        InstrumentCommandError,
     ],
 )
 def test_all_exceptions_inherit_from_glaserror(exc_type: type[Exception]) -> None:
@@ -58,3 +66,8 @@ def test_json_validation_error_defaults_to_empty_errors() -> None:
 def test_exceptions_are_catchable_as_glaserror() -> None:
     with pytest.raises(GLASError):
         raise ConfigurationError("missing file")
+
+
+def test_hardware_subexceptions_inherit_from_hardware_error() -> None:
+    assert issubclass(InstrumentConnectionError, HardwareError)
+    assert issubclass(InstrumentCommandError, HardwareError)

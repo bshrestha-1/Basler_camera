@@ -8,32 +8,48 @@ packing fraction, segregation, and related studies).
 The project is developed in phases; each phase ships as a fully tested,
 documented, production-ready release before the next one starts.
 
-## Current status: Phase 15 — Segregation Analysis (v1.5.0)
+## Current status: Phase 19 — AI Analysis: YOLO / SAM2 (v2.5.0)
 
-Phase 15 measures how separated two particle populations are -- the
-standard diagnostic for size segregation in a vibrated bidisperse
-granular bed. Particles are split into "large"/"small" populations by an
-equivalent-radius threshold (automatic, via the dataset-wide median, or
-explicit), then binned onto a coarse spatial grid to compare each cell's
-local composition against the bed's overall composition. No tracking
-step is needed -- like packing, segregation is a per-frame spatial
-statistic. `glas.analysis.compute_segregation_metrics()` computes Lacey's
-mixing index, its complement (segregation index), and a normalized
-Shannon mixing entropy from a frame's classified detections;
-`glas.analysis.plot_segregation_summary()` renders a time-series plot.
-`glas.analysis.analyze_segregation()` runs the whole pipeline over a
-dataset folder in one call, and `glas segregation` exposes it from the
-command line.
+Phase 19 adds AI-based particle detection, classification, and pixel-exact
+segmentation alongside the existing classical blob-detection pipeline: a
+trained YOLO model (`glas.ai.yolo_detector`) detects and classifies every
+particle -- including automatic intruder identification -- even under
+poor lighting or heavy overlap, and SAM2 (`glas.ai.sam2_segmenter`)
+refines each detection into an exact pixel mask for area, perimeter,
+orientation, aspect ratio, contact area between touching grains, packing
+fraction, and void fraction. Both models support full training pipelines
+(`glas.ai.annotation`, `glas.ai.yolo_train`, `glas.ai.sam2_train`) as well
+as inference-only use with pretrained weights. `torch`/`ultralytics`/`sam2`
+stay an optional dependency group (`pip install "glas[ai]"`) -- nothing
+outside `glas.ai` imports them, so `import glas`, the CLI, and the GUI all
+work without them installed, and every AI-backed CLI command/GUI tab
+shows a clear message naming exactly which packages are missing rather
+than a raw import error. `YoloDetection` is a
+`~glas.analysis.tracking_utils.Detection` subclass, so YOLO output plugs
+directly into the existing particle tracker with no changes to tracking
+logic; the GUI's analysis panel gains "Detection (YOLO)" and
+"Segmentation (SAM2)" tabs alongside the classical ones.
 
-- **Segregation index, mixing index, mixing entropy** (`glas.analysis.segregation`)
-- **`glas segregation`** (`glas.cli`)
+- **YOLO particle detection, classification, intruder identification, training** (`glas.ai.yolo_detector`, `glas.ai.yolo_train`)
+- **SAM2 pixel-exact segmentation, shape metrics, contact area, packing/void fraction, fine-tuning** (`glas.ai.sam2_segmenter`, `glas.ai.sam2_train`)
+- **Dataset bootstrap/annotation for both models** (`glas.ai.annotation`)
+- **`glas ai detect`/`prepare-yolo-dataset`/`train-yolo`/`segment`/`prepare-sam2-dataset`/`train-sam2`** (`glas.cli`)
+- **Detection (YOLO) and Segmentation (SAM2) analysis-panel tabs** (`glas.gui`)
 
-This release ships as v1.5.0, matching the roadmap table's own numbering
-below exactly. See the `[1.5.0]` entry in `CHANGELOG.md` and
-[`segregation.md`](segregation.md) for the full design.
+This release ships as v2.5.0, matching the roadmap table's own numbering
+below exactly. See the `[2.5.0]` entry in `CHANGELOG.md` and
+[`ai.md`](ai.md) for the full design.
 
 Every phase before this one remains exactly what it was:
 
+- **Desktop GUI: live preview, camera/recording controls, experiment metadata, hardware status, analysis panel, dataset browser, log console** (`glas.gui`)
+- **`glas gui`** (`glas.cli`)
+- **Camera hardware triggering, waveform generator, shaker, oscilloscope, DAQ** (`glas.camera`, `glas.hardware`)
+- **`glas trigger`/`glas waveform-gen`/`glas oscilloscope`/`glas shaker`/`glas daq`** (`glas.cli`)
+- **Accelerometer import, vibration analysis, frame synchronization** (`glas.accelerometer`)
+- **`glas accelerometer analyze`/`glas accelerometer sync`** (`glas.cli`)
+- **Segregation index, mixing index, mixing entropy** (`glas.analysis.segregation`)
+- **`glas segregation`** (`glas.cli`)
 - **Packing fraction, void fraction, number density, spatial fields, heat maps** (`glas.analysis.packing`)
 - **`glas packing`** (`glas.cli`)
 - **Optical flow, velocity fields, vorticity, circulation, heat maps** (`glas.analysis.convection`)
@@ -73,7 +89,11 @@ workflow tying every phase together,
 [`brazil-nut.md`](brazil-nut.md) for the Brazil nut effect analysis,
 [`convection.md`](convection.md) for the convection analysis,
 [`packing.md`](packing.md) for the packing analysis,
-[`segregation.md`](segregation.md) for the segregation analysis, and
+[`segregation.md`](segregation.md) for the segregation analysis,
+[`accelerometer.md`](accelerometer.md) for accelerometer import and
+synchronization, [`hardware.md`](hardware.md) for lab instrument
+integration, [`gui.md`](gui.md) for the desktop GUI,
+[`ai.md`](ai.md) for YOLO detection and SAM2 segmentation, and
 [`development.md`](development.md) for the developer workflow.
 
 ## Roadmap
@@ -94,11 +114,11 @@ workflow tying every phase together,
 | 12 | v1.2 | Brazil nut analysis (shipped as v1.2.0) |
 | 13 | v1.3 | Convection analysis — optical flow, velocity fields (shipped as v1.3.0) |
 | 14 | v1.4 | Packing analysis — packing fraction, void fraction, density (shipped as v1.4.0) |
-| 15 | v1.5 | Segregation analysis — segregation index, entropy, mixing (this release, shipped as v1.5.0) |
-| 16 | v1.6 | Accelerometer synchronization (PCB 352C22, Γ, frequency/amplitude) |
-| 17 | v1.7 | Hardware integration — function generators, shakers, DAQ |
-| 18 | v2.0 | GUI |
-| 19 | v2.5 | AI analysis — YOLO / SAM2 |
+| 15 | v1.5 | Segregation analysis — segregation index, entropy, mixing (shipped as v1.5.0) |
+| 16 | v1.6 | Accelerometer synchronization — PCB 352C22, Γ, frequency/amplitude (shipped as v1.6.0) |
+| 17 | v1.7 | Hardware integration — function generators, shakers, DAQ (shipped as v1.7.0) |
+| 18 | v2.0 | GUI (shipped as v2.0.0) |
+| 19 | v2.5 | AI analysis — YOLO / SAM2 (this release, shipped as v2.5.0) |
 | 20 | v3.0 | Full research platform |
 
 Each phase's files, features, and acceptance criteria are tracked in the

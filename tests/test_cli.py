@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
+import csv
+import math
+import socket
+import threading
 from pathlib import Path
 
 import cv2
@@ -201,6 +206,25 @@ def _make_bidisperse_dataset(base_dir: Path, *, frame_count: int = 3, size: int 
         )
     dataset.finalize()
     return folder
+
+
+def _write_sinusoidal_accelerometer_csv(
+    path: Path,
+    *,
+    frequency_hz: float = 60.0,
+    amplitude_m: float = 1e-4,
+    sample_rate_hz: float = 2000.0,
+    duration_s: float = 0.5,
+) -> None:
+    omega = 2 * math.pi * frequency_hz
+    with path.open("w", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["time_s", "acceleration_g"])
+        n = int(duration_s * sample_rate_hz)
+        for i in range(n):
+            t = i / sample_rate_hz
+            acceleration_m_s2 = amplitude_m * omega**2 * math.sin(omega * t)
+            writer.writerow([t, acceleration_m_s2 / 9.80665])
 
 
 def test_version_flag_prints_version() -> None:
@@ -611,3 +635,419 @@ class TestSegregation:
         result = runner.invoke(app, ["segregation", str(dataset_folder)])
         assert result.exit_code == 1
         assert "Segregation analysis failed" in result.output
+
+
+class TestAccelerometerAnalyze:
+    def test_reports_frequency_amplitude_and_gamma(self, tmp_path: Path) -> None:
+        csv_path = tmp_path / "accel.csv"
+        _write_sinusoidal_accelerometer_csv(csv_path, frequency_hz=60.0, amplitude_m=1e-4)
+
+        result = runner.invoke(
+            app,
+            [
+                "accelerometer",
+                "analyze",
+                str(csv_path),
+                "--value-column",
+                "acceleration_g",
+                "--value-units",
+                "g",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "Frequency: 60.0" in result.output
+        assert "Amplitude:" in result.output
+        assert "Gamma:" in result.output
+        assert "Peak acceleration:" in result.output
+
+    def test_plot_flag_writes_a_png(self, tmp_path: Path) -> None:
+        csv_path = tmp_path / "accel.csv"
+        _write_sinusoidal_accelerometer_csv(csv_path)
+        plot_path = tmp_path / "plot.png"
+
+        result = runner.invoke(
+            app,
+            [
+                "accelerometer",
+                "analyze",
+                str(csv_path),
+                "--value-column",
+                "acceleration_g",
+                "--value-units",
+                "g",
+                "--plot",
+                str(plot_path),
+            ],
+        )
+        assert result.exit_code == 0
+        assert f"Plot saved to {plot_path}" in result.output
+        assert plot_path.is_file()
+
+    def test_volts_conversion_via_sensitivity(self, tmp_path: Path) -> None:
+        csv_path = tmp_path / "accel.csv"
+        with csv_path.open("w", newline="") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["time_s", "voltage_v"])
+            for i in range(8):
+                writer.writerow([i * 0.001, 0.01 if i % 2 == 0 else -0.01])
+
+        result = runner.invoke(
+            app,
+            ["accelerometer", "analyze", str(csv_path), "--sensitivity-mv-per-g", "10"],
+        )
+        assert result.exit_code == 0
+
+    def test_missing_file_fails_cleanly(self, tmp_path: Path) -> None:
+        result = runner.invoke(
+            app, ["accelerometer", "analyze", str(tmp_path / "does_not_exist.csv")]
+        )
+        assert result.exit_code == 1
+        assert "Accelerometer analysis failed" in result.output
+
+
+class TestAccelerometerSync:
+    def test_writes_a_synchronized_csv(self, tmp_path: Path) -> None:
+        csv_path = tmp_path / "accel.csv"
+        _write_sinusoidal_accelerometer_csv(csv_path)
+        dataset_folder = _make_moving_blob_dataset(tmp_path, frame_count=3)
+        output = tmp_path / "synced.csv"
+
+        result = runner.invoke(
+            app,
+            [
+                "accelerometer",
+                "sync",
+                str(csv_path),
+                str(dataset_folder),
+                "--value-column",
+                "acceleration_g",
+                "--value-units",
+                "g",
+                "--output",
+                str(output),
+            ],
+        )
+        assert result.exit_code == 0
+        assert "Synchronized 3 frame(s)" in result.output
+        assert output.is_file()
+
+        with output.open(newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        assert len(rows) == 3
+        assert rows[0]["frame_id"] == "0"
+
+    def test_offset_flag_is_accepted(self, tmp_path: Path) -> None:
+        csv_path = tmp_path / "accel.csv"
+        _write_sinusoidal_accelerometer_csv(csv_path)
+        dataset_folder = _make_moving_blob_dataset(tmp_path, frame_count=2)
+        output = tmp_path / "synced.csv"
+
+        result = runner.invoke(
+            app,
+            [
+                "accelerometer",
+                "sync",
+                str(csv_path),
+                str(dataset_folder),
+                "--value-column",
+                "acceleration_g",
+                "--value-units",
+                "g",
+                "--output",
+                str(output),
+                "--offset-s",
+                "0.01",
+            ],
+        )
+        assert result.exit_code == 0
+
+    def test_missing_dataset_fails_cleanly(self, tmp_path: Path) -> None:
+        csv_path = tmp_path / "accel.csv"
+        _write_sinusoidal_accelerometer_csv(csv_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "accelerometer",
+                "sync",
+                str(csv_path),
+                str(tmp_path / "does_not_exist"),
+                "--value-column",
+                "acceleration_g",
+                "--value-units",
+                "g",
+                "--output",
+                str(tmp_path / "synced.csv"),
+            ],
+        )
+        assert result.exit_code == 1
+        assert "Accelerometer synchronization failed" in result.output
+
+    def test_missing_accelerometer_file_fails_cleanly(self, tmp_path: Path) -> None:
+        dataset_folder = _make_moving_blob_dataset(tmp_path, frame_count=2)
+
+        result = runner.invoke(
+            app,
+            [
+                "accelerometer",
+                "sync",
+                str(tmp_path / "does_not_exist.csv"),
+                str(dataset_folder),
+                "--output",
+                str(tmp_path / "synced.csv"),
+            ],
+        )
+        assert result.exit_code == 1
+        assert "Accelerometer synchronization failed" in result.output
+
+
+def _start_stub_scpi_server(
+    response: bytes | None = None,
+) -> tuple[str, int, list[bytes], socket.socket, threading.Thread]:
+    """Start a background TCP server that records what it receives.
+
+    If ``response`` is given, it's sent to the client immediately on
+    accept (queued in the socket's send buffer, so the client can read it
+    whenever it queries -- no second thread needed to time a reply, same
+    approach as ``tests/test_scpi.py``).
+    """
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind(("127.0.0.1", 0))
+    server.listen(1)
+    server.settimeout(5.0)  # bound accept() too, so a client that never
+    # connects (e.g. a CLI invocation that fails argument parsing before
+    # opening a socket) can't hang this thread -- and the process -- forever.
+    host, port = server.getsockname()
+    received: list[bytes] = []
+
+    def handle() -> None:
+        try:
+            connection, _ = server.accept()
+        except OSError:
+            return
+        connection.settimeout(2.0)
+        if response is not None:
+            connection.sendall(response)
+        with contextlib.suppress(OSError):
+            received.append(connection.recv(4096))
+        connection.close()
+
+    thread = threading.Thread(target=handle, daemon=True)
+    thread.start()
+    return host, port, received, server, thread
+
+
+class TestWaveformGenSine:
+    def test_sends_expected_scpi_command(self) -> None:
+        host, port, received, server, thread = _start_stub_scpi_server()
+        try:
+            result = runner.invoke(
+                app,
+                [
+                    "waveform-gen",
+                    "sine",
+                    host,
+                    "--port",
+                    str(port),
+                    "--frequency-hz",
+                    "100",
+                    "--amplitude-vpp",
+                    "2.0",
+                ],
+            )
+        finally:
+            thread.join(timeout=3.0)
+            server.close()
+
+        assert result.exit_code == 0
+        assert "100.0 Hz" in result.output
+        assert received == [b"C1:BSWV WVTP,SINE,FRQ,100.0HZ,AMP,2.0V,OFST,0.0V,PHSE,0.0\n"]
+
+    def test_enable_flag_also_turns_output_on(self) -> None:
+        host, port, received, server, thread = _start_stub_scpi_server()
+        try:
+            result = runner.invoke(
+                app,
+                [
+                    "waveform-gen",
+                    "sine",
+                    host,
+                    "--port",
+                    str(port),
+                    "--frequency-hz",
+                    "50",
+                    "--amplitude-vpp",
+                    "1.0",
+                    "--enable",
+                ],
+            )
+        finally:
+            thread.join(timeout=3.0)
+            server.close()
+
+        assert result.exit_code == 0
+        assert "output enabled" in result.output
+
+    def test_connection_failure_fails_cleanly(self) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "waveform-gen",
+                "sine",
+                "127.0.0.1",
+                "--port",
+                "1",
+                "--frequency-hz",
+                "100",
+                "--amplitude-vpp",
+                "2.0",
+            ],
+        )
+        assert result.exit_code == 1
+        assert "Could not connect to waveform generator" in result.output
+
+    def test_invalid_channel_fails_cleanly(self) -> None:
+        host, port, _received, server, thread = _start_stub_scpi_server()
+        try:
+            result = runner.invoke(
+                app,
+                [
+                    "waveform-gen",
+                    "sine",
+                    host,
+                    "--port",
+                    str(port),
+                    "--frequency-hz",
+                    "100",
+                    "--amplitude-vpp",
+                    "2.0",
+                    "--channel",
+                    "5",
+                ],
+            )
+        finally:
+            thread.join(timeout=3.0)
+            server.close()
+
+        assert result.exit_code == 1
+        assert "Could not configure waveform generator" in result.output
+
+
+class TestOscilloscopeQuery:
+    def test_prints_response(self) -> None:
+        host, port, received, server, thread = _start_stub_scpi_server(
+            response=b"FAKE,SCOPE,SN,1.0\n"
+        )
+        try:
+            result = runner.invoke(
+                app, ["oscilloscope", "query", host, "*IDN?", "--port", str(port)]
+            )
+        finally:
+            thread.join(timeout=3.0)
+            server.close()
+
+        assert result.exit_code == 0
+        assert result.output.strip() == "FAKE,SCOPE,SN,1.0"
+        assert received == [b"*IDN?\n"]
+
+    def test_connection_failure_fails_cleanly(self) -> None:
+        result = runner.invoke(app, ["oscilloscope", "query", "127.0.0.1", "*IDN?", "--port", "1"])
+        assert result.exit_code == 1
+        assert "Could not connect to oscilloscope" in result.output
+
+
+class TestShakerSetGamma:
+    def test_sends_computed_drive_voltage(self) -> None:
+        host, port, received, server, thread = _start_stub_scpi_server()
+        try:
+            result = runner.invoke(
+                app,
+                [
+                    "shaker",
+                    "set-gamma",
+                    host,
+                    "2.0",
+                    "--port",
+                    str(port),
+                    "--volts-per-g",
+                    "0.5",
+                    "--calibration-frequency-hz",
+                    "60",
+                ],
+            )
+        finally:
+            thread.join(timeout=3.0)
+            server.close()
+
+        assert result.exit_code == 0
+        assert "1.0000 Vpp" in result.output
+        assert received == [b"C1:BSWV WVTP,SINE,FRQ,60.0HZ,AMP,1.0V,OFST,0.0V,PHSE,0.0\n"]
+
+    def test_connection_failure_fails_cleanly(self) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "shaker",
+                "set-gamma",
+                "127.0.0.1",
+                "2.0",
+                "--port",
+                "1",
+                "--volts-per-g",
+                "0.5",
+                "--calibration-frequency-hz",
+                "60",
+            ],
+        )
+        assert result.exit_code == 1
+        assert "Could not connect to waveform generator" in result.output
+
+    def test_rejects_non_positive_gamma(self) -> None:
+        host, port, _received, server, thread = _start_stub_scpi_server()
+        try:
+            # "0" rather than a negative number: a leading "-" gets
+            # misparsed by Click as an option flag rather than the
+            # positional GAMMA argument, which would fail argument
+            # parsing before the command ever opens a connection.
+            result = runner.invoke(
+                app,
+                [
+                    "shaker",
+                    "set-gamma",
+                    host,
+                    "0",
+                    "--port",
+                    str(port),
+                    "--volts-per-g",
+                    "0.5",
+                    "--calibration-frequency-hz",
+                    "60",
+                ],
+            )
+        finally:
+            thread.join(timeout=3.0)
+            server.close()
+
+        assert result.exit_code == 1
+        assert "Could not set target Gamma" in result.output
+
+
+class TestDaqRead:
+    def test_labjack_backend_missing_sdk_fails_cleanly(self) -> None:
+        result = runner.invoke(app, ["daq", "read", "labjack", "--channel", "0"])
+        assert result.exit_code == 1
+        assert "Could not read from DAQ" in result.output
+        assert "labjack-ljm" in result.output
+
+    def test_ni_backend_missing_sdk_fails_cleanly(self) -> None:
+        result = runner.invoke(
+            app, ["daq", "read", "ni", "--device-name", "Dev1", "--channel", "0"]
+        )
+        assert result.exit_code == 1
+        assert "Could not read from DAQ" in result.output
+        assert "nidaqmx" in result.output
+
+    def test_unknown_backend_fails_cleanly(self) -> None:
+        result = runner.invoke(app, ["daq", "read", "bogus"])
+        assert result.exit_code == 1
+        assert "Unknown DAQ backend" in result.output

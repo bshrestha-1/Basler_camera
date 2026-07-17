@@ -124,6 +124,9 @@ class Preview:
         Crosshair position, in source-image pixel coordinates.
     show_roi : bool
         Whether an ROI box should be drawn.
+    overlay_grid : bool
+        Whether an evenly-spaced reference grid should be drawn (see
+        :func:`glas.display.render_frame`).
 
     Notes
     -----
@@ -144,6 +147,7 @@ class Preview:
         self.crosshair: bool = False
         self.crosshair_position: tuple[int, int] | None = None
         self.show_roi: bool = False
+        self.overlay_grid: bool = False
 
     def update(self) -> Frame | None:
         """Fetch the current newest frame from the buffer.

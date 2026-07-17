@@ -7,6 +7,318 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-07-17
+
+Phase 19 — AI Analysis: YOLO / SAM2. Adds AI-based particle detection,
+classification, and pixel-exact segmentation alongside the existing
+classical blob-detection pipeline: a trained YOLO model detects and
+classifies every particle -- including automatic intruder identification
+-- even under poor lighting or heavy overlap, and SAM2 refines each
+detection into an exact pixel mask for area, perimeter, orientation,
+aspect ratio, contact area between touching grains, packing fraction, and
+void fraction. Both models support full training pipelines (dataset
+preparation, annotation, configuration, training, validation, checkpoint
+management, export) as well as inference-only use with pretrained
+weights. `torch`/`ultralytics`/`sam2` stay an optional dependency group
+(`pip install "glas[ai]"`) -- nothing outside `glas.ai` imports them, so
+`import glas`, the CLI, and the GUI all work without them installed, and
+every AI-backed CLI command/GUI tab shows a clear message naming exactly
+which packages are missing rather than a raw import error. Bumped to
+2.5.0, matching the roadmap.
+
+### Added
+
+- `glas.ai` (new subpackage):
+  - `glas.ai.dependencies`: `import_torch()`/`import_ultralytics()`/
+    `import_build_sam2()`/`import_sam2_image_predictor()` (lazy imports
+    that raise `AIDependencyError` with an install hint instead of a raw
+    `ImportError`), `missing_ai_packages()`/`describe_missing_ai_packages()`.
+  - `glas.ai.yolo_detector`: `YoloDetection` (a
+    `glas.analysis.tracking_utils.Detection` subclass carrying label,
+    confidence, and intruder flag -- plugs directly into the existing
+    `ParticleTracker` with no changes to it), `YoloParticleDetector`
+    (wraps a trained `ultralytics` model for inference), and
+    `track_dataset_yolo()` (the YOLO equivalent of
+    `glas.analysis.track_dataset()`, same return shape).
+  - `glas.ai.yolo_train`: `train_yolo()`, `validate_yolo()`,
+    `export_yolo_model()`, and `YoloTrainingConfig`/`YoloTrainingResult`,
+    wrapping `ultralytics`'s own training loop.
+  - `glas.ai.annotation`: `auto_annotate_dataset()` (bootstraps YOLO
+    training boxes from a recording via the existing classical blob
+    detector) and `prepare_yolo_dataset()` (train/val split, writes a
+    YOLO-format `data.yaml`).
+  - `glas.ai.sam2_segmenter`: `Sam2Segmenter` (wraps a SAM2 image
+    predictor for box-prompted mask segmentation), `ParticleSegment`
+    (mask + score + shape metrics -- a deliberate non-Pydantic exception
+    like `glas.frame.Frame`, for the same reason), `compute_shape_metrics()`
+    (area, perimeter, centroid, orientation, aspect ratio),
+    `compute_contact_area()` (shared boundary between two touching
+    particles), and `compute_segmentation_summary()` (packing fraction,
+    void fraction, pairwise contacts for a whole frame).
+  - `glas.ai.sam2_train`: `train_sam2()` (lightweight fine-tuning --
+    freezes the image encoder, trains only the prompt encoder and mask
+    decoder -- on box-prompted ground-truth masks), `auto_annotate_masks()`
+    (bootstraps masks via classical contour detection), and
+    `prepare_sam2_dataset()` (writes a training manifest).
+- `glas.analysis.particle_tracking`: `TrackedParticle` gains `label`,
+  `confidence`, and `is_intruder` fields (populated from a `YoloDetection`
+  via `getattr()`, left at their classical defaults --
+  `None`/`None`/`False` -- for classical tracking); new
+  `export_tracks_csv()` writes the same CSV format for both classical and
+  YOLO-sourced tracking output.
+- `glas.exceptions`: `AIError`, `AIDependencyError`, `AIModelError`,
+  `AIDatasetError`.
+- CLI: `glas ai` subcommand group -- `detect`, `prepare-yolo-dataset`,
+  `train-yolo`, `segment`, `prepare-sam2-dataset`, `train-sam2`; `glas
+  analyze` gains a `--csv` option using the new `export_tracks_csv()`.
+- GUI: the analysis panel gains "Detection (YOLO)" and "Segmentation
+  (SAM2)" tabs (each with a second input field -- YOLO weights path / SAM2
+  model id, the latter defaulting to `facebook/sam2.1-hiera-large` so it
+  works out of the box with nothing but a recording), backed by
+  `AnalysisViewModel.run_detection()`/`run_segmentation()` and a new
+  `ai_dependency_missing` signal that shows a modal dialog
+  (`glas.gui.ai_dialog`) naming any missing AI package instead of
+  starting a background run that would only fail. Only Histograms
+  remains a disabled placeholder tab.
+- `pyproject.toml`: new `ai` extra (`torch>=2.2`, `ultralytics>=8.3`,
+  `sam2>=1.1`), also added to `dev` so the full test suite runs without
+  extra setup.
+- `docs/ai.md` (new): full design, quickstarts for inference and
+  training, CLI/GUI usage, and integration with the existing tracking
+  pipeline.
+
+## [2.0.0] - 2026-07-16
+
+Phase 18 — Desktop GUI. Adds a full PySide6/Qt6 desktop application
+alongside the existing CLI, following an MVVM architecture: ViewModels
+wrap the existing, Qt-free backend and translate it into Qt signals;
+widgets contain no business logic and talk only to their ViewModel. The
+GUI and CLI share the same backend end to end, so acquisition, recording,
+and analysis logic exists only once. PySide6 stays an optional dependency
+(`pip install glas[gui]`) -- nothing outside `glas.gui` imports it, so
+`import glas` and every other CLI command work without it installed.
+Bumped to 2.0.0 (a new top-level interface, not a breaking change to any
+existing API).
+
+### Added
+
+- `glas.gui` (new subpackage):
+  - `glas.gui.theme`: `dark_palette()`/`apply_theme()` -- a dark palette in
+    the style of Qt Creator/Basler pylon Viewer, toggleable at runtime.
+  - `glas.gui.logging_bridge.QtLogHandler`: bridges the existing
+    `glas.logger` root logger into a Qt signal via composition (not
+    multiple inheritance -- `logging.Handler.emit` and `QObject`'s own
+    internal `emit` are genuinely incompatible), so every camera,
+    recording, and export log line reaches the GUI with no per-module
+    wiring.
+  - `glas.gui.viewmodels` (six ViewModels, one per backend class/module):
+    `CameraViewModel`, `RecordingViewModel` (adds GUI-only auto-stop by
+    duration/frame-count, implemented the same way the CLI's own
+    `glas record --duration` implements it -- polling and stopping once a
+    target is reached, not a new `RecorderController` mode), `LiveFeedViewModel`,
+    `HardwareStatusViewModel` (includes an open-ended `DeviceStatus`
+    device registry so a future LabJack/NI DAQ/accelerometer/function-
+    generator/amplifier integration can appear in the status panel by
+    calling `register_device()`, with no changes to the ViewModel or
+    widget), `DatasetViewModel`, and `AnalysisViewModel` (runs
+    `glas.analysis`/`glas.accelerometer` calls on a background
+    `QThread`, so a slow analysis never blocks the UI).
+  - `glas.gui.widgets` (eight widgets assembled into `glas.gui.main_window.MainWindow`):
+    `LivePreviewWidget` (zoom/pan/fit-to-window/100%, frame counter, FPS,
+    histogram, crosshair, ROI selection, reference grid, wall-clock
+    timestamp overlay -- rendered through the same `glas.display.render_frame`
+    the CLI's own preview window uses), `CameraControlsWidget` (camera
+    selection, pixel format, exposure/gain/gamma, frame rate, ROI,
+    binning, image flip, auto exposure/auto gain, hardware trigger --
+    every control's range/choices queried live from the connected
+    camera), `RecordingControlsWidget` (start/stop/pause/resume, auto-stop
+    by duration or frame count, output folder, progress bar, disk-space
+    and estimated-remaining-time display, dropped-frame counter),
+    `ExperimentMetadataWidget` (material, grain diameter/density,
+    container geometry, fill depth, frequency, amplitude, target
+    acceleration -- collected into the new `glas.experiment.PhysicalParameters`),
+    `HardwareStatusWidget`, `AnalysisPanelWidget` (tabs wired to the real
+    `track_dataset`/`analyze_brazil_nut`/`analyze_convection`/
+    `analyze_packing`/`analyze_segregation`/`analyze_vibration` functions,
+    each with a plot-export button where a `plot_*` function exists;
+    Segmentation and Histograms are explicit, disabled placeholder tabs,
+    since no backend function exists for either yet), `LogConsoleWidget`
+    (level filtering, save to file), and `DatasetBrowserWidget` (search,
+    thumbnail preview, metadata, export, delete, duplicate).
+  - `glas.gui.main_window.MainWindow`: assembles every widget into
+    dockable, movable, resizable panels around a central live preview,
+    with a menu bar, status bar, dark-mode toggle, and `QSettings`-backed
+    window layout save/restore. Owns the one piece of cross-widget
+    orchestration in the GUI layer: a standalone live-preview-only
+    `glas.acquisition.Acquisition` runs whenever the camera is connected
+    but idle, and is synchronously released and handed off to
+    `glas.recorder.Recorder`'s own ring buffer for the duration of a
+    recording (`glas.preview.Preview` only ever `peek()`s, so this is
+    always safe), switching back once it stops.
+  - `glas.gui.app.main()`: constructs the `QApplication`, applies the
+    saved theme, and shows `MainWindow`.
+- `glas gui BASE_DIR` CLI command: launches the desktop GUI. Lazily
+  imports `glas.gui.app`, printing an install hint (`pip install glas[gui]`)
+  and exiting cleanly if PySide6 is not installed, rather than failing
+  `import glas.cli` itself.
+- `glas.experiment.PhysicalParameters`/`build_physical_parameters_extra()`/
+  `get_physical_parameters()`: a fixed schema (experiment ID, operator,
+  material, grain diameter/density, container geometry, fill depth,
+  frequency, amplitude, target acceleration) for the scientific parameters
+  `ExperimentMetadataWidget` collects, stored under a new reserved
+  `DatasetMetadata.extra` key alongside the existing name/tags keys --
+  usable from the CLI or any future caller, not GUI-specific.
+- `glas.camera.Camera` gained introspection methods so callers (the GUI,
+  or any future caller) can query valid ranges/choices without reaching
+  into GenICam directly: `exposure_time_bounds_us()`, `gain_bounds_db()`,
+  `gamma_bounds()`, `frame_rate_bounds_hz()`, `roi_bounds()`,
+  `pixel_format_choices()`, `exposure_auto_choices()`,
+  `gain_auto_choices()`, `trigger_source_choices()`,
+  `trigger_activation_choices()`, and `temperature_celsius()` (`None` if
+  the connected device does not expose a temperature sensor).
+- `glas.preview.Preview.overlay_grid` and a matching `overlay_grid`/
+  `timestamp_text` parameter on `glas.display.render_frame()`, for the
+  live preview's reference-grid and timestamp overlays -- shared by the
+  GUI and `glas.display.PreviewWindow` alike.
+- `glas.controller.RecorderController.base_data_dir` (settable property):
+  lets a long-lived controller (the GUI keeps one for its whole session)
+  change where new experiment folders are created without reconstructing
+  the controller.
+- PySide6 (`gui` extra) and pytest-qt (dev dependency).
+
+### Changed
+
+- `glas.gui.widgets.recording_controls_widget.RecordingControlsWidget`
+  accepts optional `extra_provider`/`before_start` hooks, used by
+  `MainWindow` to merge `ExperimentMetadataWidget`'s parameters into every
+  recording and to release the live-preview acquisition before one
+  starts, without either widget needing a reference to the other.
+
+## [1.7.0] - 2026-07-16
+
+Phase 17 — Hardware Integration. Adds support for the lab equipment used
+to drive and monitor a vibrated granular-material experiment: a Siglent
+SDG1032X function generator, a Modal Shop 2025E shaker, LabJack and
+National Instruments DAQ devices, a generic SCPI oscilloscope, and
+Basler camera hardware triggering. Every class is built so its own
+command-building and error-handling logic is unit-testable without
+physical hardware attached.
+
+### Added
+
+- `glas.camera.Camera` gained hardware trigger support, extending the
+  existing class rather than a separate module:
+  - `enable_hardware_trigger()`/`disable_hardware_trigger()`/
+    `is_hardware_triggered()`: configure the GenICam ``TriggerSelector``/
+    ``TriggerSource``/``TriggerActivation``/``TriggerMode`` features Basler
+    cameras expose for external triggering. Tested against pypylon's
+    built-in camera emulator, exercising real GenICam node access.
+- `glas.hardware` (new subpackage):
+  - `glas.hardware.scpi`: `SCPITransport` (a minimal write/query/close
+    protocol), `SocketSCPITransport` (a raw-TCP "SCPI-raw" transport,
+    port 5025), and `SCPIInstrument` (the universal IEEE 488.2 commands
+    -- identify, reset, clear status, self-test, operation-complete --
+    shared by every SCPI-based class below). Every device-specific class
+    is built on an injected transport, so command-building logic is
+    unit-testable against a fake transport with no physical instrument
+    or network access.
+  - `glas.hardware.waveform_generator.SiglentSDG1032X`: `set_sine_wave()`/
+    `set_frequency()`/`set_amplitude()`/`enable_output()`/
+    `disable_output()`, using the `BSWV` command family documented in
+    Siglent's SDG-X series programming guide.
+  - `glas.hardware.oscilloscope.SCPIOscilloscope`: a generic wrapper
+    adding only the universal IEEE 488.2 commands plus `query_float()`
+    (a helper for the common "measurement query returns a bare number"
+    pattern) -- deliberately not modeling any specific vendor's dialect,
+    since no oscilloscope model was specified and SCPI syntax varies
+    significantly between vendors even for basic operations.
+  - `glas.hardware.shaker.ShakerCalibration`/`ShakerController`: drives a
+    Modal Shop 2025E shaker by computing the drive voltage a measured
+    calibration says will reach a target Gamma, then sending it to the
+    waveform generator feeding the amplifier. The 2025E itself is an
+    analog gain stage with no digital control interface, so this only
+    ever talks to the generator -- documented explicitly rather than
+    fabricating a protocol for hardware that has none.
+  - `glas.hardware.daq.AnalogInputDAQ`/`LabJackDAQ`/`NiDAQ`: analog input
+    for LabJack (`labjack-ljm`) and National Instruments (`nidaqmx`)
+    DAQ devices. Neither vendor SDK is a hard GLAS dependency; each class
+    defers importing its SDK until `connect()` (mirroring how
+    `glas.camera` defers importing `pypylon`) and accepts the SDK module
+    itself as an injectable constructor parameter, so tests can supply a
+    fake module standing in for the real one.
+- `glas trigger enable`/`disable`/`status`: camera hardware trigger
+  control from the command line.
+- `glas waveform-gen sine`: configure a waveform generator channel.
+- `glas oscilloscope query`: send a raw SCPI query to an oscilloscope.
+- `glas shaker set-gamma`: drive a shaker to a target Gamma.
+- `glas daq read`: read a single analog input channel from a LabJack or
+  NI DAQ.
+- New exception types: `HardwareError` (base), `InstrumentConnectionError`,
+  `InstrumentCommandError`.
+- `docs/hardware.md` describing the design, including the
+  test-without-hardware strategy used throughout the phase.
+
+## [1.6.0] - 2026-07-16
+
+Phase 16 — Accelerometer Synchronization. Imports a PCB 352C22
+accelerometer recording (a CSV file exported by DAQ software), computes
+the standard vibration diagnostics used in granular-material physics,
+and aligns the recording's timeline with a recorded camera dataset's
+frames.
+
+### Added
+
+- `glas.accelerometer` (new top-level module -- not under
+  `glas.analysis`, since it's a new data source, not a frame-image
+  analysis):
+  - `import_accelerometer_csv()`: reads a CSV file with a header row,
+    converting raw sensor voltage to acceleration in g via the
+    accelerometer's sensitivity (configurable, since it varies by unit
+    and is only correct when taken from the specific accelerometer's
+    calibration certificate) or passing already-converted g values
+    through unchanged. Raises `AccelerometerError` with a specific
+    message for every malformed-input case: missing file, missing
+    header, missing column, non-numeric value, too few rows, or
+    non-increasing timestamps.
+  - `compute_vibration_frequency()`: finds the dominant frequency via a
+    real FFT of the (mean-removed) signal.
+  - `compute_gamma()`: the dimensionless vibration intensity
+    `Gamma = peak acceleration / g`, the standard control parameter for
+    a vibrated granular bed -- equal to the peak measured acceleration
+    expressed in g, since the accelerometer measures acceleration
+    directly rather than displacement.
+  - `compute_vibration_amplitude()`: recovers displacement amplitude, in
+    meters, from peak acceleration and frequency, assuming sinusoidal
+    motion.
+  - `plot_vibration_signal()`: plots the time-domain acceleration
+    signal, via matplotlib's non-interactive `"Agg"` backend.
+  - `analyze_vibration()`: runs the whole frequency/amplitude/Gamma
+    pipeline over a CSV file in one call, the same role
+    `glas.analysis.analyze_packing()` plays for its own phase.
+  - `synchronize_with_frames()`: finds the nearest accelerometer sample
+    in time for each of a sequence of `Frame`s, via `numpy.searchsorted`
+    (no new dependency). Assumes both recordings started at the same
+    real-world moment by default; accepts an explicit `offset_s` to
+    correct for a known difference. Exact hardware-triggered
+    synchronization (a shared clock zero point) is Phase 17's concern --
+    this is a best-effort software alignment for setups without that
+    hardware yet.
+  - `AccelerometerRecording`: the imported-recording result type. Like
+    `glas.frame.Frame`, a plain dataclass rather than a Pydantic model,
+    since its fields are numpy arrays.
+  - `VibrationMetrics`: the frozen Pydantic result type bundling
+    frequency, amplitude, Gamma, and peak acceleration.
+- `glas accelerometer analyze`: runs the vibration analysis from the
+  command line, with optional `--value-units`/`--sensitivity-mv-per-g`
+  and `--plot`.
+- `glas accelerometer sync`: synchronizes an accelerometer recording
+  with a dataset's frames from the command line, writing one
+  acceleration value per frame to a CSV.
+- New exception type: `AccelerometerError`.
+- `docs/accelerometer.md` describing the design, including the Gamma
+  unit-cancellation reasoning and the software-vs-hardware
+  synchronization distinction.
+
 ## [1.5.0] - 2026-07-16
 
 Phase 15 — Segregation Analysis. Measures how separated two particle

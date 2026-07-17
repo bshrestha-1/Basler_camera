@@ -18,6 +18,7 @@ missing, isn't necessary.
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -27,7 +28,7 @@ from pydantic import BaseModel, ConfigDict
 from glas.dataset import create_experiment_folder
 from glas.exceptions import DatasetError, ExperimentNotFoundError, JSONValidationError
 from glas.logger import get_logger
-from glas.metadata import DatasetMetadata, load_metadata_json
+from glas.metadata import DatasetMetadata, load_metadata_json, save_metadata_json
 
 logger = get_logger(__name__)
 
@@ -37,7 +38,61 @@ logger = get_logger(__name__)
 NAME_KEY = "experiment_name"
 TAGS_KEY = "experiment_tags"
 
+#: Reserved DatasetMetadata.extra key under which PhysicalParameters is
+#: stored, alongside (not instead of) NAME_KEY/TAGS_KEY.
+PHYSICAL_PARAMETERS_KEY = "physical_parameters"
+
 _METADATA_FILENAME = "metadata.json"
+
+
+class PhysicalParameters(BaseModel):
+    """Operator-entered scientific parameters describing a granular-material experiment.
+
+    Purely descriptive metadata attached alongside a recording -- nothing
+    in :mod:`glas.analysis` reads these fields today, but a fixed schema
+    (rather than free-text notes) means they can be searched, compared
+    across runs, or fed into an analysis function's parameters later
+    without re-parsing prose. All fields are optional: this model is
+    filled in as much or as little as the operator has decided at
+    recording time.
+
+    Attributes
+    ----------
+    experiment_id : str
+        Operator-assigned identifier (e.g. a lab notebook reference),
+        distinct from the auto-generated run folder name.
+    operator : str
+        Name or initials of the person running the experiment.
+    material : str
+        Granular material used, e.g. ``"glass beads"``, ``"sand"``.
+    grain_diameter_mm : float, optional
+        Nominal grain diameter, in millimeters.
+    grain_density_kg_m3 : float, optional
+        Grain material density, in kg/m^3.
+    container_geometry : str
+        Free-text description of the container, e.g. ``"cylindrical, 80mm ID"``.
+    fill_depth_mm : float, optional
+        Depth of the granular fill at rest, in millimeters.
+    frequency_hz : float, optional
+        Vibration frequency, in Hz.
+    amplitude_mm : float, optional
+        Vibration amplitude, in millimeters.
+    target_acceleration_g : float, optional
+        Target peak acceleration, in units of g.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    experiment_id: str = ""
+    operator: str = ""
+    material: str = ""
+    grain_diameter_mm: float | None = None
+    grain_density_kg_m3: float | None = None
+    container_geometry: str = ""
+    fill_depth_mm: float | None = None
+    frequency_hz: float | None = None
+    amplitude_mm: float | None = None
+    target_acceleration_g: float | None = None
 
 
 class ExperimentSummary(BaseModel):
@@ -115,6 +170,45 @@ def build_experiment_extra(
     if tags:
         merged[TAGS_KEY] = list(tags)
     return merged
+
+
+def build_physical_parameters_extra(
+    parameters: PhysicalParameters, extra: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Build a ``DatasetMetadata.extra`` dict carrying physical experiment parameters.
+
+    Parameters
+    ----------
+    parameters : PhysicalParameters
+    extra : dict, optional
+        Additional caller-supplied fields to merge in alongside
+        :data:`PHYSICAL_PARAMETERS_KEY`.
+
+    Returns
+    -------
+    dict
+        ``extra``, with :data:`PHYSICAL_PARAMETERS_KEY` added unless
+        ``parameters`` is entirely default (nothing was actually filled in).
+    """
+    merged = dict(extra or {})
+    if parameters != PhysicalParameters():
+        merged[PHYSICAL_PARAMETERS_KEY] = parameters.model_dump(mode="json")
+    return merged
+
+
+def get_physical_parameters(metadata: DatasetMetadata) -> PhysicalParameters:
+    """Read back the physical parameters recorded for an experiment, if any.
+
+    Returns
+    -------
+    PhysicalParameters
+        Parsed from ``metadata.extra[PHYSICAL_PARAMETERS_KEY]``, or
+        all-default if that key is absent.
+    """
+    raw = metadata.extra.get(PHYSICAL_PARAMETERS_KEY)
+    if raw is None:
+        return PhysicalParameters()
+    return PhysicalParameters.model_validate(raw)
 
 
 def _summarize(folder: Path, metadata: DatasetMetadata) -> ExperimentSummary:
@@ -262,4 +356,59 @@ class ExperimentManager:
             raise ExperimentNotFoundError(
                 f"No finalized experiment {run_id!r} found under {self._base_data_dir}."
             )
+        return summary
+
+    def delete_experiment(self, run_id: str) -> None:
+        """Permanently delete a finalized experiment's folder and everything in it.
+
+        Parameters
+        ----------
+        run_id : str
+            Folder name of the experiment to delete.
+
+        Raises
+        ------
+        ExperimentNotFoundError
+            If ``run_id`` doesn't exist or isn't a finalized experiment.
+        """
+        summary = self.get_experiment(run_id)
+        shutil.rmtree(summary.folder)
+        logger.info("Deleted experiment %s.", run_id)
+
+    def duplicate_experiment(self, run_id: str, *, new_name: str = "") -> ExperimentSummary:
+        """Copy a finalized experiment's folder into a new, separately numbered folder.
+
+        Parameters
+        ----------
+        run_id : str
+            Folder name of the experiment to copy.
+        new_name : str, optional
+            Human-readable name for the copy, stored the same way
+            :func:`build_experiment_extra` stores one. Defaults to the
+            original's name with `` (copy)`` appended.
+
+        Returns
+        -------
+        ExperimentSummary
+            The newly created copy.
+
+        Raises
+        ------
+        ExperimentNotFoundError
+            If ``run_id`` doesn't exist or isn't a finalized experiment.
+        """
+        original = self.get_experiment(run_id)
+        destination = self.new_folder()
+        shutil.copytree(original.folder, destination, dirs_exist_ok=True)
+
+        metadata_path = destination / _METADATA_FILENAME
+        metadata = load_metadata_json(metadata_path)
+        name = new_name if new_name else f"{original.name} (copy)".strip()
+        extra = dict(metadata.extra)
+        extra[NAME_KEY] = name
+        save_metadata_json(metadata.model_copy(update={"extra": extra}), metadata_path)
+
+        logger.info("Duplicated experiment %s -> %s.", run_id, destination.name)
+        summary = _load_summary(destination)
+        assert summary is not None  # just written above, so this always loads
         return summary

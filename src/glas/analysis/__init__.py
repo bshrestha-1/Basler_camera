@@ -36,7 +36,12 @@ from glas.analysis.packing import (
     plot_packing_heatmap,
     plot_packing_summary,
 )
-from glas.analysis.particle_tracking import ParticleTracker, TrackedParticle, track_dataset
+from glas.analysis.particle_tracking import (
+    ParticleTracker,
+    TrackedParticle,
+    export_tracks_csv,
+    track_dataset,
+)
 from glas.analysis.segregation import (
     SegregationMetrics,
     SegregationSummary,
@@ -53,6 +58,7 @@ __all__ = [
     "ParticleTracker",
     "TrackedParticle",
     "track_dataset",
+    "export_tracks_csv",
     "BrazilNutTrajectory",
     "identify_brazil_nut",
     "compute_brazil_nut_trajectory",

@@ -20,11 +20,13 @@ from glas.camera_validator import (
     ROIBounds,
     validate_exposure_time,
     validate_gain,
+    validate_numeric_range,
     validate_pixel_format,
     validate_roi,
 )
 from glas.exceptions import (
     AcquisitionError,
+    CameraConfigurationError,
     CameraConnectionError,
     CameraDriverError,
     CameraFeatureUnavailableError,
@@ -62,6 +64,28 @@ def _node_readable(node_map: pylon.NodeMapWrapper, name: str) -> bool:
 def _node_executable(node_map: pylon.NodeMapWrapper, name: str) -> bool:
     node = node_map.GetNode(name)
     return node is not None and genicam.IsWritable(node)
+
+
+def _set_enum_node(node_map: pylon.NodeMapWrapper, name: str, value: str) -> None:
+    """Set a GenICam enumeration node, validating ``value`` against its supported symbolics."""
+    node = node_map.GetNode(name)
+    if node is None or not genicam.IsWritable(node):
+        raise CameraFeatureUnavailableError(f"This camera does not expose the {name!r} feature.")
+    symbolics = node.GetSymbolics()
+    if value not in symbolics:
+        raise CameraConfigurationError(
+            f"{value!r} is not a supported value for {name!r} on this camera. "
+            f"Supported values: {', '.join(symbolics)}."
+        )
+    node.SetValue(value)
+
+
+def _enum_choices(node_map: pylon.NodeMapWrapper, name: str) -> list[str]:
+    """List a GenICam enumeration node's supported values."""
+    node = node_map.GetNode(name)
+    if node is None or not genicam.IsReadable(node):
+        raise CameraFeatureUnavailableError(f"This camera does not expose the {name!r} feature.")
+    return list(node.GetSymbolics())
 
 
 class Camera:
@@ -197,6 +221,30 @@ class Camera:
         camera = self._require_camera()
         return _get_usb_diagnostics(camera)
 
+    def temperature_celsius(self) -> float | None:
+        """Device temperature, in Celsius, if the connected camera exposes it.
+
+        Returns
+        -------
+        float or None
+            ``None`` if the connected device (or transport layer, e.g. an
+            emulated camera) does not expose a ``DeviceTemperature`` node
+            -- this is common and not treated as an error, matching how
+            :class:`~glas.camera_info.UsbDiagnostics`'s fields are already
+            ``None`` for unsupported nodes.
+
+        Raises
+        ------
+        CameraConnectionError
+            If no camera is connected.
+        """
+        camera = self._require_camera()
+        node_map = camera.GetNodeMap()
+        node = node_map.GetNode("DeviceTemperature")
+        if node is None or not genicam.IsReadable(node):
+            return None
+        return float(node.GetValue())
+
     @property
     def exposure_time_us(self) -> float:
         """Exposure time, in microseconds."""
@@ -274,6 +322,298 @@ class Camera:
         camera = self._require_camera()
         node = camera.PixelFormat
         node.SetValue(validate_pixel_format(value, node.GetSymbolics()))
+
+    @property
+    def gamma(self) -> float:
+        """Gamma correction applied to pixel values."""
+        camera = self._require_camera()
+        return float(camera.Gamma.GetValue())
+
+    @gamma.setter
+    def gamma(self, value: float) -> None:
+        camera = self._require_camera()
+        node = camera.Gamma
+        bounds = NumericRange(minimum=node.GetMin(), maximum=node.GetMax())
+        node.SetValue(validate_numeric_range(value, bounds, field_name="gamma"))
+
+    @property
+    def frame_rate_hz(self) -> float:
+        """Acquisition frame rate, in Hz.
+
+        Only caps the actual acquisition rate while
+        :attr:`frame_rate_enabled` is ``True`` -- otherwise the camera
+        runs as fast as exposure time and readout allow.
+        """
+        camera = self._require_camera()
+        return float(camera.AcquisitionFrameRate.GetValue())
+
+    @frame_rate_hz.setter
+    def frame_rate_hz(self, value: float) -> None:
+        camera = self._require_camera()
+        node = camera.AcquisitionFrameRate
+        bounds = NumericRange(minimum=node.GetMin(), maximum=node.GetMax())
+        node.SetValue(validate_numeric_range(value, bounds, field_name="frame_rate_hz", unit="Hz"))
+
+    @property
+    def frame_rate_enabled(self) -> bool:
+        """Whether :attr:`frame_rate_hz` caps the acquisition rate."""
+        camera = self._require_camera()
+        return bool(camera.AcquisitionFrameRateEnable.GetValue())
+
+    @frame_rate_enabled.setter
+    def frame_rate_enabled(self, value: bool) -> None:
+        camera = self._require_camera()
+        camera.AcquisitionFrameRateEnable.SetValue(value)
+
+    @property
+    def binning(self) -> tuple[int, int]:
+        """Horizontal and vertical binning factors, as ``(horizontal, vertical)``."""
+        camera = self._require_camera()
+        return (int(camera.BinningHorizontal.GetValue()), int(camera.BinningVertical.GetValue()))
+
+    @binning.setter
+    def binning(self, value: tuple[int, int]) -> None:
+        camera = self._require_camera()
+        horizontal, vertical = value
+        h_node = camera.BinningHorizontal
+        v_node = camera.BinningVertical
+        h_bounds = NumericRange(minimum=h_node.GetMin(), maximum=h_node.GetMax())
+        v_bounds = NumericRange(minimum=v_node.GetMin(), maximum=v_node.GetMax())
+        h_node.SetValue(
+            int(validate_numeric_range(horizontal, h_bounds, field_name="binning_horizontal"))
+        )
+        v_node.SetValue(
+            int(validate_numeric_range(vertical, v_bounds, field_name="binning_vertical"))
+        )
+
+    @property
+    def reverse_x(self) -> bool:
+        """Whether the image is flipped horizontally before delivery."""
+        camera = self._require_camera()
+        return bool(camera.ReverseX.GetValue())
+
+    @reverse_x.setter
+    def reverse_x(self, value: bool) -> None:
+        camera = self._require_camera()
+        camera.ReverseX.SetValue(value)
+
+    @property
+    def reverse_y(self) -> bool:
+        """Whether the image is flipped vertically before delivery."""
+        camera = self._require_camera()
+        return bool(camera.ReverseY.GetValue())
+
+    @reverse_y.setter
+    def reverse_y(self, value: bool) -> None:
+        camera = self._require_camera()
+        camera.ReverseY.SetValue(value)
+
+    @property
+    def exposure_auto(self) -> str:
+        """Automatic exposure mode: ``"Off"``, ``"Once"``, or ``"Continuous"``."""
+        camera = self._require_camera()
+        return str(camera.ExposureAuto.GetValue())
+
+    @exposure_auto.setter
+    def exposure_auto(self, value: str) -> None:
+        camera = self._require_camera()
+        _set_enum_node(camera.GetNodeMap(), "ExposureAuto", value)
+
+    @property
+    def gain_auto(self) -> str:
+        """Automatic gain mode: ``"Off"``, ``"Once"``, or ``"Continuous"``."""
+        camera = self._require_camera()
+        return str(camera.GainAuto.GetValue())
+
+    @gain_auto.setter
+    def gain_auto(self, value: str) -> None:
+        camera = self._require_camera()
+        _set_enum_node(camera.GetNodeMap(), "GainAuto", value)
+
+    def exposure_time_bounds_us(self) -> NumericRange:
+        """Valid range for :attr:`exposure_time_us` on the connected device."""
+        node = self._require_camera().ExposureTime
+        return NumericRange(minimum=node.GetMin(), maximum=node.GetMax())
+
+    def gain_bounds_db(self) -> NumericRange:
+        """Valid range for :attr:`gain_db` on the connected device."""
+        node = self._require_camera().Gain
+        return NumericRange(minimum=node.GetMin(), maximum=node.GetMax())
+
+    def gamma_bounds(self) -> NumericRange:
+        """Valid range for :attr:`gamma` on the connected device."""
+        node = self._require_camera().Gamma
+        return NumericRange(minimum=node.GetMin(), maximum=node.GetMax())
+
+    def frame_rate_bounds_hz(self) -> NumericRange:
+        """Valid range for :attr:`frame_rate_hz` on the connected device."""
+        node = self._require_camera().AcquisitionFrameRate
+        return NumericRange(minimum=node.GetMin(), maximum=node.GetMax())
+
+    def roi_bounds(self) -> ROIBounds:
+        """Valid ranges for :attr:`roi`'s fields, reflecting the device's current live state.
+
+        Unlike :attr:`roi`'s own setter, this does not reset offsets to
+        zero first, so ``offset_x``/``offset_y`` here reflect what is
+        achievable *without* changing the current width/height, not the
+        sensor's absolute maximum -- a query must not have the side
+        effect of moving the ROI. ``sensor_width``/``sensor_height``
+        (from the device's fixed ``WidthMax``/``HeightMax``) are the true
+        absolute maximums regardless of current offset; :attr:`roi`'s
+        setter re-derives its own zero-offset bounds before applying a
+        new value, so it always accepts up to those.
+        """
+        camera = self._require_camera()
+        return ROIBounds(
+            width=NumericRange(minimum=camera.Width.GetMin(), maximum=camera.Width.GetMax()),
+            height=NumericRange(minimum=camera.Height.GetMin(), maximum=camera.Height.GetMax()),
+            offset_x=NumericRange(minimum=camera.OffsetX.GetMin(), maximum=camera.OffsetX.GetMax()),
+            offset_y=NumericRange(minimum=camera.OffsetY.GetMin(), maximum=camera.OffsetY.GetMax()),
+            sensor_width=camera.WidthMax.GetValue(),
+            sensor_height=camera.HeightMax.GetValue(),
+            width_step=camera.Width.GetInc(),
+            height_step=camera.Height.GetInc(),
+            offset_x_step=camera.OffsetX.GetInc(),
+            offset_y_step=camera.OffsetY.GetInc(),
+        )
+
+    def pixel_format_choices(self) -> list[str]:
+        """Pixel formats the connected device supports."""
+        return list(self._require_camera().PixelFormat.GetSymbolics())
+
+    def exposure_auto_choices(self) -> list[str]:
+        """Valid values for :attr:`exposure_auto` on the connected device."""
+        return _enum_choices(self._require_camera().GetNodeMap(), "ExposureAuto")
+
+    def gain_auto_choices(self) -> list[str]:
+        """Valid values for :attr:`gain_auto` on the connected device."""
+        return _enum_choices(self._require_camera().GetNodeMap(), "GainAuto")
+
+    def trigger_source_choices(self, *, selector: str = "FrameStart") -> list[str]:
+        """Valid ``source`` values for :meth:`enable_hardware_trigger` on the connected device."""
+        node_map = self._require_camera().GetNodeMap()
+        _set_enum_node(node_map, "TriggerSelector", selector)
+        return _enum_choices(node_map, "TriggerSource")
+
+    def trigger_activation_choices(self, *, selector: str = "FrameStart") -> list[str]:
+        """Valid ``activation`` values for :meth:`enable_hardware_trigger` on this device."""
+        node_map = self._require_camera().GetNodeMap()
+        _set_enum_node(node_map, "TriggerSelector", selector)
+        return _enum_choices(node_map, "TriggerActivation")
+
+    def enable_hardware_trigger(
+        self,
+        *,
+        source: str = "Line1",
+        activation: str = "RisingEdge",
+        selector: str = "FrameStart",
+    ) -> None:
+        """Configure the camera to wait for an external hardware trigger signal before each frame.
+
+        Basler cameras expose triggering via four related GenICam
+        features: ``TriggerSelector`` picks which internal event the
+        trigger gates (the default, ``"FrameStart"``, is the conventional
+        choice for frame-synchronized acquisition against external
+        hardware -- a function generator's sync output, a shaker
+        controller, or another camera), ``TriggerSource`` picks the
+        physical input line or software source, ``TriggerActivation``
+        picks which signal edge or level fires it, and ``TriggerMode``
+        turns triggering on. This method configures all four, in the
+        order GenICam expects (selector first, mode last).
+
+        Parameters
+        ----------
+        source : str, default "Line1"
+            Trigger source. Physical input lines are typically named
+            ``"Line1"``, ``"Line2"``, etc.; ``"Software"`` triggers via a
+            software command instead of a physical signal. Must be one of
+            the values the connected camera reports as supported.
+        activation : str, default "RisingEdge"
+            Which edge or level of the trigger signal fires the camera
+            (e.g. ``"RisingEdge"``, ``"FallingEdge"``). Must be one of the
+            values the connected camera reports as supported.
+        selector : str, default "FrameStart"
+            Which internal trigger this configures. Almost always left at
+            the default.
+
+        Raises
+        ------
+        CameraConnectionError
+            If no camera is connected.
+        CameraFeatureUnavailableError
+            If the connected device does not expose triggering at all.
+        CameraConfigurationError
+            If ``source``, ``activation``, or ``selector`` is not one of
+            the values the connected device supports.
+        """
+        camera = self._require_camera()
+        node_map = camera.GetNodeMap()
+        _set_enum_node(node_map, "TriggerSelector", selector)
+        _set_enum_node(node_map, "TriggerSource", source)
+        _set_enum_node(node_map, "TriggerActivation", activation)
+        _set_enum_node(node_map, "TriggerMode", "On")
+        logger.info(
+            "Hardware trigger enabled (selector=%s, source=%s, activation=%s).",
+            selector,
+            source,
+            activation,
+        )
+
+    def disable_hardware_trigger(self, *, selector: str = "FrameStart") -> None:
+        """Return the camera to free-running (untriggered) acquisition.
+
+        Parameters
+        ----------
+        selector : str, default "FrameStart"
+            See :meth:`enable_hardware_trigger`.
+
+        Raises
+        ------
+        CameraConnectionError
+            If no camera is connected.
+        CameraFeatureUnavailableError
+            If the connected device does not expose triggering.
+        """
+        camera = self._require_camera()
+        node_map = camera.GetNodeMap()
+        _set_enum_node(node_map, "TriggerSelector", selector)
+        _set_enum_node(node_map, "TriggerMode", "Off")
+        logger.info("Hardware trigger disabled (selector=%s).", selector)
+
+    def is_hardware_triggered(self, *, selector: str = "FrameStart") -> bool:
+        """Whether the camera is currently configured to wait for an external trigger.
+
+        Note
+        ----
+        Reading this sets ``TriggerSelector`` to ``selector`` as a side
+        effect -- GenICam's selector nodes work as multiplexers, so
+        querying "trigger mode for FrameStart" requires first selecting
+        FrameStart, the same way :meth:`enable_hardware_trigger` does.
+
+        Parameters
+        ----------
+        selector : str, default "FrameStart"
+            See :meth:`enable_hardware_trigger`.
+
+        Returns
+        -------
+        bool
+
+        Raises
+        ------
+        CameraConnectionError
+            If no camera is connected.
+        CameraFeatureUnavailableError
+            If the connected device does not expose triggering.
+        """
+        camera = self._require_camera()
+        node_map = camera.GetNodeMap()
+        _set_enum_node(node_map, "TriggerSelector", selector)
+
+        mode_node = node_map.GetNode("TriggerMode")
+        if mode_node is None or not genicam.IsReadable(mode_node):
+            raise CameraFeatureUnavailableError("This camera does not expose triggering.")
+        return str(mode_node.GetValue()) == "On"
 
     @property
     def supports_hardware_timestamp(self) -> bool:

@@ -82,6 +82,15 @@ class TestApplyZoom:
         assert result.shape == (5, 5)
 
 
+class TestPreviewDefaults:
+    def test_overlay_flags_default_off(self) -> None:
+        preview = Preview(RingBuffer(capacity=4))
+        assert preview.crosshair is False
+        assert preview.crosshair_position is None
+        assert preview.show_roi is False
+        assert preview.overlay_grid is False
+
+
 class TestPreviewUpdate:
     def test_update_on_empty_buffer_returns_none(self) -> None:
         buffer = RingBuffer(capacity=4)

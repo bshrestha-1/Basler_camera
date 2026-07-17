@@ -16,6 +16,15 @@ import pytest
 # at first use.
 os.environ.setdefault("PYLON_CAMEMU", "2")
 
+# Run Qt (glas.gui) tests against Qt's software-rendered, headless
+# "offscreen" platform plugin rather than a real display -- there is none
+# in CI or most development containers. Respects an already-set
+# QT_QPA_PLATFORM (e.g. a developer running the test suite with a real
+# display attached, who wants to watch windows appear). Must run before
+# any test module imports PySide6, since Qt reads this at QApplication
+# construction.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
 
 @pytest.fixture(autouse=True)
 def _reset_glas_logging():

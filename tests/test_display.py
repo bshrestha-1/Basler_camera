@@ -171,6 +171,51 @@ class TestRenderFrame:
         image = render_frame(frame)
         assert image.sum() == 0
 
+    def test_overlay_grid_draws_lines(self) -> None:
+        frame = Frame(
+            frame_id=0,
+            image=np.zeros((120, 120), dtype=np.uint8),
+            pixel_format="Mono8",
+            host_timestamp_ns=0,
+            device_timestamp_ticks=0,
+        )
+        image = render_frame(frame, overlay_grid=True)
+        assert image.sum() > 0
+        assert tuple(image[0, 0]) == (80, 80, 80)
+
+    def test_overlay_grid_off_by_default(self) -> None:
+        frame = Frame(
+            frame_id=0,
+            image=np.zeros((120, 120), dtype=np.uint8),
+            pixel_format="Mono8",
+            host_timestamp_ns=0,
+            device_timestamp_ticks=0,
+        )
+        image = render_frame(frame)
+        assert image.sum() == 0
+
+    def test_timestamp_text_draws_non_background_pixels(self) -> None:
+        frame = Frame(
+            frame_id=0,
+            image=np.zeros((30, 150), dtype=np.uint8),
+            pixel_format="Mono8",
+            host_timestamp_ns=0,
+            device_timestamp_ticks=0,
+        )
+        image = render_frame(frame, timestamp_text="12:34:56.789")
+        assert image.sum() > 0
+
+    def test_timestamp_text_none_draws_nothing(self) -> None:
+        frame = Frame(
+            frame_id=0,
+            image=np.zeros((30, 150), dtype=np.uint8),
+            pixel_format="Mono8",
+            host_timestamp_ns=0,
+            device_timestamp_ticks=0,
+        )
+        image = render_frame(frame, timestamp_text=None)
+        assert image.sum() == 0
+
 
 class TestRenderHistogram:
     def test_output_shape_matches_requested_dimensions(self) -> None:

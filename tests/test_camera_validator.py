@@ -13,6 +13,7 @@ from glas.camera_validator import (
     ROIBounds,
     validate_exposure_time,
     validate_gain,
+    validate_numeric_range,
     validate_pixel_format,
     validate_roi,
 )
@@ -53,6 +54,31 @@ def test_validate_gain_rejects_out_of_range() -> None:
         validate_gain(-1.0, bounds)
     with pytest.raises(CameraConfigurationError):
         validate_gain(25.0, bounds)
+
+
+def test_validate_numeric_range_accepts_in_range_value() -> None:
+    bounds = NumericRange(minimum=0.0, maximum=4.0)
+    assert validate_numeric_range(1.2, bounds, field_name="gamma") == 1.2
+
+
+def test_validate_numeric_range_accepts_boundary_values() -> None:
+    bounds = NumericRange(minimum=0.0, maximum=4.0)
+    assert validate_numeric_range(0.0, bounds, field_name="gamma") == 0.0
+    assert validate_numeric_range(4.0, bounds, field_name="gamma") == 4.0
+
+
+def test_validate_numeric_range_rejects_out_of_range() -> None:
+    bounds = NumericRange(minimum=0.0, maximum=4.0)
+    with pytest.raises(CameraConfigurationError):
+        validate_numeric_range(-1.0, bounds, field_name="gamma")
+    with pytest.raises(CameraConfigurationError):
+        validate_numeric_range(5.0, bounds, field_name="gamma")
+
+
+def test_validate_numeric_range_error_message_includes_field_name_and_unit() -> None:
+    bounds = NumericRange(minimum=1.0, maximum=100.0)
+    with pytest.raises(CameraConfigurationError, match="frame_rate_hz"):
+        validate_numeric_range(0.5, bounds, field_name="frame_rate_hz", unit="Hz")
 
 
 def test_validate_pixel_format_accepts_supported_value() -> None:

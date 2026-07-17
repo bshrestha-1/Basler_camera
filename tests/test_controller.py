@@ -39,6 +39,31 @@ def test_start_recording_without_connection_raises(controller: RecorderControlle
         controller.start_recording()
 
 
+def test_base_data_dir_reflects_constructor_argument(
+    controller: RecorderController, tmp_path: Path
+) -> None:
+    assert controller.base_data_dir == tmp_path
+
+
+def test_base_data_dir_setter_changes_where_new_folders_are_created(
+    controller: RecorderController, tmp_path: Path
+) -> None:
+    new_dir = tmp_path / "elsewhere"
+    new_dir.mkdir()
+    controller.base_data_dir = new_dir
+    assert controller.base_data_dir == new_dir
+
+    controller.connect()
+    try:
+        recorder = controller.start_recording()
+        try:
+            assert recorder.dataset.folder == new_dir / "Run0001"
+        finally:
+            controller.stop_recording()
+    finally:
+        controller.disconnect()
+
+
 def test_connect_and_start_recording_creates_experiment_folder(
     controller: RecorderController, tmp_path: Path
 ) -> None:

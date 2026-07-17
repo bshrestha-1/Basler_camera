@@ -34,7 +34,7 @@ import numpy as np  # noqa: E402
 from numpy.typing import NDArray  # noqa: E402
 from pydantic import BaseModel, ConfigDict  # noqa: E402
 
-from glas.analysis.tracking_utils import _to_uint8_mono  # noqa: E402
+from glas.analysis.tracking_utils import to_uint8_mono  # noqa: E402
 from glas.dataset import iter_frames  # noqa: E402
 from glas.exceptions import ConvectionError  # noqa: E402
 
@@ -156,8 +156,8 @@ def compute_optical_flow(
     if elapsed_s <= 0:
         raise ValueError(f"elapsed_s must be positive, got {elapsed_s}.")
 
-    previous_8bit = _to_uint8_mono(previous_image)
-    current_8bit = _to_uint8_mono(current_image)
+    previous_8bit = to_uint8_mono(previous_image)
+    current_8bit = to_uint8_mono(current_image)
 
     # cv2's stubs omit the documented `flow=None` ("let OpenCV allocate the
     # output") convention its overloads accept at runtime for every other

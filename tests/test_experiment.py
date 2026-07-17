@@ -11,10 +11,14 @@ from glas.dataset import Dataset
 from glas.exceptions import ExperimentNotFoundError
 from glas.experiment import (
     NAME_KEY,
+    PHYSICAL_PARAMETERS_KEY,
     TAGS_KEY,
     ExperimentManager,
     ExperimentSummary,
+    PhysicalParameters,
     build_experiment_extra,
+    build_physical_parameters_extra,
+    get_physical_parameters,
 )
 from glas.frame import Frame
 from glas.metadata import DatasetMetadata
@@ -72,6 +76,62 @@ class TestBuildExperimentExtra:
 
     def test_empty_tags_sequence_is_omitted(self) -> None:
         assert build_experiment_extra(tags=[]) == {}
+
+
+class TestBuildPhysicalParametersExtra:
+    def test_all_default_produces_no_reserved_key(self) -> None:
+        assert build_physical_parameters_extra(PhysicalParameters()) == {}
+
+    def test_filled_in_fields_are_stored_under_reserved_key(self) -> None:
+        parameters = PhysicalParameters(material="glass beads", grain_diameter_mm=2.0)
+        result = build_physical_parameters_extra(parameters)
+        assert result[PHYSICAL_PARAMETERS_KEY]["material"] == "glass beads"
+        assert result[PHYSICAL_PARAMETERS_KEY]["grain_diameter_mm"] == 2.0
+
+    def test_merges_with_existing_extra(self) -> None:
+        parameters = PhysicalParameters(operator="bijay")
+        result = build_physical_parameters_extra(parameters, extra={"other": "value"})
+        assert result["other"] == "value"
+        assert PHYSICAL_PARAMETERS_KEY in result
+
+
+class TestGetPhysicalParameters:
+    def test_absent_key_returns_all_default(self) -> None:
+        metadata = DatasetMetadata(
+            dataset_format="hdf5",
+            camera_model="acA640-750um",
+            camera_serial="12345678",
+            pixel_format="Mono8",
+            width=4,
+            height=4,
+            created_at_utc="2026-07-16T00:00:00+00:00",
+        )
+        assert get_physical_parameters(metadata) == PhysicalParameters()
+
+    def test_round_trips_through_extra(self) -> None:
+        parameters = PhysicalParameters(
+            experiment_id="EXP-42",
+            operator="bijay",
+            material="sand",
+            grain_diameter_mm=0.5,
+            grain_density_kg_m3=2650.0,
+            container_geometry="cylindrical, 80mm ID",
+            fill_depth_mm=40.0,
+            frequency_hz=60.0,
+            amplitude_mm=1.5,
+            target_acceleration_g=2.0,
+        )
+        metadata = DatasetMetadata(
+            dataset_format="hdf5",
+            camera_model="acA640-750um",
+            camera_serial="12345678",
+            pixel_format="Mono8",
+            width=4,
+            height=4,
+            created_at_utc="2026-07-16T00:00:00+00:00",
+            extra=build_physical_parameters_extra(parameters),
+        )
+        assert get_physical_parameters(metadata) == parameters
 
 
 class TestNewFolder:
@@ -212,6 +272,82 @@ class TestGetExperiment:
         manager.new_folder()  # created but never finalized
         with pytest.raises(ExperimentNotFoundError):
             manager.get_experiment("Run0001")
+
+
+class TestDeleteExperiment:
+    def test_removes_the_folder(self, tmp_path: Path) -> None:
+        manager = ExperimentManager(tmp_path)
+        folder = _make_experiment(manager, name="to delete")
+
+        manager.delete_experiment("Run0001")
+
+        assert not folder.exists()
+
+    def test_no_longer_appears_in_list_experiments(self, tmp_path: Path) -> None:
+        manager = ExperimentManager(tmp_path)
+        _make_experiment(manager, name="first")
+        _make_experiment(manager, name="second")
+
+        manager.delete_experiment("Run0001")
+
+        run_ids = [s.run_id for s in manager.list_experiments()]
+        assert run_ids == ["Run0002"]
+
+    def test_missing_run_id_raises(self, tmp_path: Path) -> None:
+        manager = ExperimentManager(tmp_path)
+        with pytest.raises(ExperimentNotFoundError):
+            manager.delete_experiment("Run9999")
+
+
+class TestDuplicateExperiment:
+    def test_creates_a_new_separately_numbered_folder(self, tmp_path: Path) -> None:
+        manager = ExperimentManager(tmp_path)
+        _make_experiment(manager, name="original")
+
+        copy = manager.duplicate_experiment("Run0001")
+
+        assert copy.run_id == "Run0002"
+        assert copy.folder != manager.get_experiment("Run0001").folder
+        assert copy.folder.is_dir()
+
+    def test_copy_has_all_the_original_frames(self, tmp_path: Path) -> None:
+        manager = ExperimentManager(tmp_path)
+        _make_experiment(manager, name="original")
+
+        copy = manager.duplicate_experiment("Run0001")
+
+        assert copy.frame_count == manager.get_experiment("Run0001").frame_count
+
+    def test_default_name_appends_copy_suffix(self, tmp_path: Path) -> None:
+        manager = ExperimentManager(tmp_path)
+        _make_experiment(manager, name="original")
+
+        copy = manager.duplicate_experiment("Run0001")
+
+        assert copy.name == "original (copy)"
+
+    def test_explicit_new_name_is_used(self, tmp_path: Path) -> None:
+        manager = ExperimentManager(tmp_path)
+        _make_experiment(manager, name="original")
+
+        copy = manager.duplicate_experiment("Run0001", new_name="renamed copy")
+
+        assert copy.name == "renamed copy"
+
+    def test_original_is_untouched(self, tmp_path: Path) -> None:
+        manager = ExperimentManager(tmp_path)
+        _make_experiment(manager, name="original", tags=["brazil-nut"])
+
+        manager.duplicate_experiment("Run0001")
+
+        original = manager.get_experiment("Run0001")
+        assert original.name == "original"
+        assert original.tags == ["brazil-nut"]
+
+    def test_missing_run_id_raises(self, tmp_path: Path) -> None:
+        manager = ExperimentManager(tmp_path)
+        with pytest.raises(ExperimentNotFoundError):
+            manager.duplicate_experiment("Run9999")
 
 
 class TestExperimentSummary:
