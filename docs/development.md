@@ -107,6 +107,7 @@ src/glas/            Package source (importable as `import glas`)
   accelerometer.py                  Vibration import, analysis, frame sync
   gui/                              PySide6/Qt6 desktop GUI (optional: `pip install glas[gui]`)
     theme.py                          Dark palette
+    status_indicators.py              Colored status dots, resource gauge coloring
     logging_bridge.py                 logging -> Qt signal bridge
     app.py                            Entry point (glas gui)
     main_window.py                    Assembles every widget into docks

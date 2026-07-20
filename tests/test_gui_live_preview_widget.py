@@ -11,7 +11,12 @@ from PySide6.QtWidgets import QApplication
 
 from glas.frame import Frame
 from glas.gui.viewmodels.live_feed_viewmodel import LiveFeedViewModel
-from glas.gui.widgets.live_preview_widget import LivePreviewWidget, _format_wall_clock_text
+from glas.gui.widgets.live_preview_widget import (
+    _EMPTY_STATE_PAGE,
+    _LIVE_VIEW_PAGE,
+    LivePreviewWidget,
+    _format_wall_clock_text,
+)
 from glas.ringbuffer import RingBuffer
 
 
@@ -74,6 +79,46 @@ class TestFrameRendering:
         buffer.push(_make_frame(1))
         attached_widget._view_model._poll()
 
+        assert attached_widget._frame_label.text() == "Frame: 1"
+
+
+class TestEmptyState:
+    def test_shows_empty_state_before_any_frame(self, widget: LivePreviewWidget) -> None:
+        assert widget._view_stack.currentIndex() == _EMPTY_STATE_PAGE
+        assert widget._empty_state_title_label.text() == "No Camera Connected"
+        assert "Connect" in widget._empty_state_subtitle_label.text()
+
+    def test_first_frame_switches_to_live_view(self, attached_widget: LivePreviewWidget) -> None:
+        buffer: RingBuffer = attached_widget._buffer  # type: ignore[attr-defined]
+        buffer.push(_make_frame(0))
+        attached_widget._view_model._poll()
+        assert attached_widget._view_stack.currentIndex() == _LIVE_VIEW_PAGE
+
+    def test_reset_returns_to_empty_state(self, attached_widget: LivePreviewWidget) -> None:
+        buffer: RingBuffer = attached_widget._buffer  # type: ignore[attr-defined]
+        buffer.push(_make_frame(0))
+        attached_widget._view_model._poll()
+        assert attached_widget._view_stack.currentIndex() == _LIVE_VIEW_PAGE
+
+        attached_widget.reset()
+
+        assert attached_widget._view_stack.currentIndex() == _EMPTY_STATE_PAGE
+        assert attached_widget._pixmap_item.pixmap().isNull() is True
+        assert attached_widget._frame_label.text() == "Frame: --"
+        assert attached_widget._fps_label.text() == "FPS: --"
+
+    def test_frame_after_reset_switches_back_to_live_view(
+        self, attached_widget: LivePreviewWidget
+    ) -> None:
+        buffer: RingBuffer = attached_widget._buffer  # type: ignore[attr-defined]
+        buffer.push(_make_frame(0))
+        attached_widget._view_model._poll()
+        attached_widget.reset()
+
+        buffer.push(_make_frame(1))
+        attached_widget._view_model._poll()
+
+        assert attached_widget._view_stack.currentIndex() == _LIVE_VIEW_PAGE
         assert attached_widget._frame_label.text() == "Frame: 1"
 
 

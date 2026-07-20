@@ -15,7 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QDoubleSpinBox,
@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from glas.gui.status_indicators import COLOR_GRAY, COLOR_RED, COLOR_YELLOW, status_dot_html
 from glas.gui.viewmodels.recording_viewmodel import RecordingViewModel
 from glas.metadata import DatasetMetadata
 from glas.recorder import RecorderProgress
@@ -130,7 +131,8 @@ class RecordingControlsWidget(QWidget):
         self._pause_button = QPushButton("Pause")
         self._resume_button = QPushButton("Resume")
 
-        self._recording_indicator = QLabel("● IDLE")
+        self._recording_indicator = QLabel(status_dot_html(COLOR_GRAY, "IDLE"))
+        self._recording_indicator.setTextFormat(Qt.TextFormat.RichText)
         self._progress_bar = QProgressBar()
         self._progress_bar.setRange(0, 100)
         self._frame_count_label = QLabel("Frames: --")
@@ -246,22 +248,22 @@ class RecordingControlsWidget(QWidget):
 
     def _on_recording_started(self) -> None:
         self._set_recording_buttons_enabled(recording=True, paused=False)
-        self._recording_indicator.setText("● RECORDING")
+        self._recording_indicator.setText(status_dot_html(COLOR_RED, "RECORDING"))
 
     def _on_recording_stopped(self, metadata: DatasetMetadata) -> None:
         self._set_recording_buttons_enabled(recording=False, paused=False)
-        self._recording_indicator.setText("● IDLE")
+        self._recording_indicator.setText(status_dot_html(COLOR_GRAY, "IDLE"))
         self._frame_count_label.setText(f"Frames: {metadata.frame_count}")
         self._progress_bar.setValue(0)
         self._estimated_time_label.setText("Est. remaining: --")
 
     def _on_recording_paused(self) -> None:
         self._set_recording_buttons_enabled(recording=True, paused=True)
-        self._recording_indicator.setText("● PAUSED")
+        self._recording_indicator.setText(status_dot_html(COLOR_YELLOW, "PAUSED"))
 
     def _on_recording_resumed(self) -> None:
         self._set_recording_buttons_enabled(recording=True, paused=False)
-        self._recording_indicator.setText("● RECORDING")
+        self._recording_indicator.setText(status_dot_html(COLOR_RED, "RECORDING"))
 
     def _on_progress_updated(self, progress: RecorderProgress) -> None:
         self._frame_count_label.setText(f"Frames: {progress.frame_count}")
@@ -287,7 +289,7 @@ class RecordingControlsWidget(QWidget):
         )
 
     def _on_error(self, message: str) -> None:
-        self._recording_indicator.setText(f"● ERROR: {message}")
+        self._recording_indicator.setText(status_dot_html(COLOR_RED, f"ERROR: {message}"))
 
     def _update_disk_free(self) -> None:
         usage = shutil.disk_usage(self._view_model.output_folder)

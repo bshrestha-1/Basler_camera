@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "glas"
-version = "3.0.1"
+version = "3.2.0"
 description = "GLAS: Granular Lab Acquisition System -- acquisition and analysis platform for a Basler ace acA640-750um camera used in granular-material physics research."
 readme = "README.md"
 license = { text = "MIT" }

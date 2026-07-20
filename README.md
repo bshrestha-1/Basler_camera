@@ -6,7 +6,7 @@ research (Brazil nut effect, convection, packing fraction, segregation,
 and related studies). It is developed in phases, each shipped as a fully
 tested, documented, production-ready release.
 
-**Current release: Phase 20 — Full Research Platform (v3.0.1).**
+**Current release: Phase 20 — Full Research Platform (v3.2.0).**
 GLAS closes out its roadmap with the tools that turn a recording into a
 publishable result: spatial calibration (px -> mm, two-point or
 checkerboard), preflight and post-recording data-quality checks
@@ -46,6 +46,10 @@ For development (tests, linting, type checking):
 
 ```bash
 pip install -e ".[dev]"
+```
+
+```bash
+conda activate glas311
 ```
 
 ## Quickstart

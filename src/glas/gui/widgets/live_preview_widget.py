@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QRubberBand,
+    QStackedWidget,
     QToolBar,
     QVBoxLayout,
     QWidget,
@@ -41,6 +42,8 @@ from glas.timestamps import WallClockReference
 _ZOOM_STEP = 1.25
 _HISTOGRAM_WIDTH = 256
 _HISTOGRAM_HEIGHT = 80
+_EMPTY_STATE_PAGE = 0
+_LIVE_VIEW_PAGE = 1
 
 InteractionMode = Literal["pan", "crosshair", "roi"]
 
@@ -150,6 +153,12 @@ class LivePreviewWidget(QWidget):
         self._view.point_clicked.connect(self._on_point_clicked)
         self._view.region_selected.connect(self._on_region_selected)
 
+        self._empty_state_widget = self._build_empty_state_widget()
+        self._view_stack = QStackedWidget(self)
+        self._view_stack.addWidget(self._empty_state_widget)  # _EMPTY_STATE_PAGE
+        self._view_stack.addWidget(self._view)  # _LIVE_VIEW_PAGE
+        self._view_stack.setCurrentIndex(_EMPTY_STATE_PAGE)
+
         self._frame_label = QLabel("Frame: --")
         self._fps_label = QLabel("FPS: --")
         self._zoom_label = QLabel("Zoom: 100%")
@@ -166,11 +175,55 @@ class LivePreviewWidget(QWidget):
 
         layout = QVBoxLayout(self)
         layout.addWidget(self._toolbar)
-        layout.addWidget(self._view, stretch=1)
+        layout.addWidget(self._view_stack, stretch=1)
         layout.addLayout(status_row)
         layout.addWidget(self._histogram_label)
 
         self._view_model.frame_ready.connect(self._on_frame_ready)
+
+    def _build_empty_state_widget(self) -> QWidget:
+        container = QWidget()
+        container.setObjectName("livePreviewEmptyState")
+
+        self._empty_state_icon_label = QLabel("\U0001f4f7")  # camera emoji
+        icon_font = self._empty_state_icon_label.font()
+        icon_font.setPointSize(64)
+        self._empty_state_icon_label.setFont(icon_font)
+        self._empty_state_icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self._empty_state_title_label = QLabel("No Camera Connected")
+        title_font = self._empty_state_title_label.font()
+        title_font.setPointSize(16)
+        title_font.setBold(True)
+        self._empty_state_title_label.setFont(title_font)
+        self._empty_state_title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self._empty_state_subtitle_label = QLabel("Click Connect to begin acquisition.")
+        self._empty_state_subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._empty_state_subtitle_label.setStyleSheet("color: palette(mid);")
+
+        layout = QVBoxLayout(container)
+        layout.addStretch()
+        layout.addWidget(self._empty_state_icon_label)
+        layout.addWidget(self._empty_state_title_label)
+        layout.addWidget(self._empty_state_subtitle_label)
+        layout.addStretch()
+        return container
+
+    def reset(self) -> None:
+        """Return to the "No Camera Connected" empty state.
+
+        Called by the main window when the camera disconnects, so the
+        preview never keeps showing the last frame from a camera that is
+        no longer there.
+        """
+        self._view_stack.setCurrentIndex(_EMPTY_STATE_PAGE)
+        self._pixmap_item.setPixmap(QPixmap())
+        self._frame_label.setText("Frame: --")
+        self._fps_label.setText("FPS: --")
+        self._zoom_label.setText("Zoom: 100%")
+        self._histogram_label.clear()
+        self._wall_clock_ref = None
 
     def _build_toolbar(self) -> QToolBar:
         toolbar = QToolBar(self)
@@ -282,6 +335,9 @@ class LivePreviewWidget(QWidget):
         self._zoom_label.setText(f"Zoom: {self._zoom_percent:.0f}%")
 
     def _on_frame_ready(self, frame: Frame) -> None:
+        if self._view_stack.currentIndex() != _LIVE_VIEW_PAGE:
+            self._view_stack.setCurrentIndex(_LIVE_VIEW_PAGE)
+
         if self._wall_clock_ref is None:
             self._wall_clock_ref = WallClockReference.capture()
 

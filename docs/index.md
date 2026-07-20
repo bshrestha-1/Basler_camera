@@ -8,7 +8,7 @@ packing fraction, segregation, and related studies).
 The project is developed in phases; each phase ships as a fully tested,
 documented, production-ready release before the next one starts.
 
-## Current status: Phase 20 — Full Research Platform (v3.0.1)
+## Current status: Phase 20 — Full Research Platform (v3.2.0)
 
 Phase 20 closes out the roadmap: perfecting data taking, analysis, and
 publishable results. Spatial calibration (`glas.calibration`) converts
@@ -48,8 +48,19 @@ captures frame rate, ROI offset, and the full Phase 17 camera settings
 (gamma, binning, flip, auto-exposure/auto-gain, trigger state), not just
 exposure/gain/ROI size, so a recording is always fully reproducible from
 its own `metadata.json` (see [`dataset.md`](dataset.md#reproducibility)).
-See the `[3.0.0]`/`[3.0.1]` entries in `CHANGELOG.md` and
-[`calibration.md`](calibration.md), [`qa.md`](qa.md), and
+v3.1.0 is a GUI polish pass: connection/recording status across the
+desktop app is now a colored dot (green/red/amber/gray) instead of plain
+text, and USB bandwidth/buffer/memory/CPU/storage readouts in the
+Hardware Status panel are color-coded `QProgressBar` gauges instead of
+`"N/A"` labels (see [`gui.md`](gui.md#status-indicators-and-resource-gauges)).
+v3.2.0 makes the live preview dominate the main window by default
+(~60% width, ~65-70% height, matching pylon Viewer/ImageJ/Micro-Manager/
+NIS-Elements/ZEN's convention of the image as the primary focus) instead
+of splitting space evenly with a wall of side panels, and replaces the
+blank rectangle shown before a camera is connected with a proper empty
+state (see [`gui.md`](gui.md#layout)).
+See the `[3.0.0]`/`[3.0.1]`/`[3.1.0]`/`[3.2.0]` entries in `CHANGELOG.md`
+and [`calibration.md`](calibration.md), [`qa.md`](qa.md), and
 [`publishing.md`](publishing.md) for the full design.
 
 Every phase before this one remains exactly what it was:

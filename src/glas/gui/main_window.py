@@ -26,8 +26,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QSettings, Qt
-from PySide6.QtGui import QAction, QCloseEvent
+from PySide6.QtCore import QSettings, Qt, QTimer
+from PySide6.QtGui import QAction, QCloseEvent, QShowEvent
 from PySide6.QtWidgets import (
     QApplication,
     QDockWidget,
@@ -65,6 +65,15 @@ from glas.recorder import Recorder
 
 _ORGANIZATION = "GLAS"
 _APPLICATION = "GLAS"
+_BOTTOM_DOCK_MAX_HEIGHT = 260
+"""Height cap for the bottom dock group (Analysis/Dataset Browser/Log
+Console), so it can never grow to compete with the live preview for
+vertical space. `QMainWindow.resizeDocks()` cannot reliably size a dock
+area relative to the central widget (only relative to sibling dock
+widgets -- see `_apply_default_dock_sizes`'s docstring), so a maximum
+size is the one technique that reliably holds up across window resizes.
+The panel is still shrinkable and still scrolls its own content, so
+nothing in it becomes unreachable."""
 
 
 class MainWindow(QMainWindow):
@@ -148,11 +157,13 @@ class MainWindow(QMainWindow):
         self._add_dock(
             "Log Console", self._log_console_widget, Qt.DockWidgetArea.BottomDockWidgetArea
         )
+        self._apply_default_layout()
+        self._default_dock_sizes_applied = False
 
         self._build_menu_bar()
         self._build_status_bar()
         self._connect_orchestration_signals()
-        self._restore_layout()
+        self._had_saved_state = self._restore_layout()
 
     def _add_dock(self, title: str, widget: QWidget, area: Qt.DockWidgetArea) -> None:
         dock = QDockWidget(title, self)
@@ -165,6 +176,66 @@ class MainWindow(QMainWindow):
         )
         self.addDockWidget(area, dock)
         self._docks[title] = dock
+
+    def _apply_default_layout(self) -> None:
+        """Group docks so the live preview -- the primary tool, per the
+        imaging-software convention set by pylon Viewer, ImageJ,
+        Micro-Manager, NIS-Elements, and ZEN -- dominates the window
+        (roughly 60-70% of its area) rather than competing with a wall of
+        equally-sized side panels.
+
+        Docks that are only glanced at occasionally (Experiment Metadata,
+        Hardware Status; Dataset Browser, Log Console) are tabified behind
+        the one most relevant during live operation (Recording Controls;
+        Analysis) instead of each claiming their own strip of space --
+        every panel stays reachable via its tab, `View`, or a floating
+        drag, exactly as before, but only one at a time competes with the
+        preview for room. The bottom group additionally gets a permanent
+        height cap (see :data:`_BOTTOM_DOCK_MAX_HEIGHT`); the left/right
+        docks' default widths are set separately by
+        :meth:`_apply_default_dock_sizes`, once the window is shown --
+        see its docstring for why that can't happen here.
+        """
+        self.resize(1600, 1000)
+
+        self.tabifyDockWidget(self._docks["Recording Controls"], self._docks["Experiment Metadata"])
+        self.tabifyDockWidget(self._docks["Recording Controls"], self._docks["Hardware Status"])
+        self._docks["Recording Controls"].raise_()
+
+        self.tabifyDockWidget(self._docks["Analysis"], self._docks["Dataset Browser"])
+        self.tabifyDockWidget(self._docks["Analysis"], self._docks["Log Console"])
+        self._docks["Log Console"].raise_()
+
+        for name in ("Analysis", "Dataset Browser", "Log Console"):
+            self._docks[name].setMaximumHeight(_BOTTOM_DOCK_MAX_HEIGHT)
+
+    def _apply_default_dock_sizes(self) -> None:
+        """Narrow the left/right docks so the preview gets the rest of the window's width.
+
+        ``QMainWindow.resizeDocks()`` can only size dock widgets relative
+        to *sibling dock widgets* in the same splitter row -- it has
+        nothing to size the central widget (the live preview) relative to,
+        so it silently no-ops here for the top/bottom split (handled
+        instead by the bottom dock group's permanent height cap, see
+        :data:`_BOTTOM_DOCK_MAX_HEIGHT`). It also does nothing until the
+        dock area has actually been laid out once, which only happens
+        once the window is shown -- calling it from ``__init__`` (before
+        anyone has shown the window) silently does nothing either. Deferred
+        to :meth:`showEvent` instead, and only for a first-ever launch
+        (:attr:`_had_saved_state` is ``False``) -- a user's own saved
+        layout must never be overridden.
+        """
+        self.resizeDocks(
+            [self._docks["Camera Controls"], self._docks["Recording Controls"]],
+            [280, 320],
+            Qt.Orientation.Horizontal,
+        )
+
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802 - Qt override
+        super().showEvent(event)
+        if not self._had_saved_state and not self._default_dock_sizes_applied:
+            self._default_dock_sizes_applied = True
+            QTimer.singleShot(0, self._apply_default_dock_sizes)
 
     def _build_menu_bar(self) -> None:
         menu_bar = self.menuBar()
@@ -235,6 +306,7 @@ class MainWindow(QMainWindow):
     def _on_camera_disconnected(self) -> None:
         self._camera_status_label.setText("Camera: disconnected")
         self._release_preview_acquisition()
+        self._live_preview_widget.reset()
 
     def _release_preview_acquisition(self) -> None:
         """Synchronously stop and release the live-preview-only acquisition, if any.
@@ -282,15 +354,27 @@ class MainWindow(QMainWindow):
             "A control and analysis platform for granular-material physics experiments.",
         )
 
-    def _restore_layout(self) -> None:
+    def _restore_layout(self) -> bool:
+        """Restore a previously saved window geometry/dock layout, if any.
+
+        Returns
+        -------
+        bool
+            ``True`` if a saved ``windowState`` was found and restored --
+            the signal :meth:`showEvent` uses to decide whether it's safe
+            to apply the default dock proportions, or whether doing so
+            would clobber the user's own saved layout.
+        """
         geometry = self._settings.value("geometry")
         if geometry is not None:
             self.restoreGeometry(geometry)
         window_state = self._settings.value("windowState")
-        if window_state is not None:
+        had_saved_state = window_state is not None
+        if had_saved_state:
             self.restoreState(window_state)
         dark_mode = self._settings.value("darkMode", False, type=bool)
         self._dark_mode_action.setChecked(bool(dark_mode))
+        return had_saved_state
 
     def _reset_layout(self) -> None:
         self._settings.remove("geometry")

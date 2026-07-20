@@ -10,7 +10,9 @@ directly.
 
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
@@ -27,6 +29,7 @@ from PySide6.QtWidgets import (
 
 from glas.camera_info import CameraInfo
 from glas.camera_validator import ROI
+from glas.gui.status_indicators import COLOR_GREEN, COLOR_RED, COLOR_YELLOW, status_dot_html
 from glas.gui.viewmodels.camera_viewmodel import CameraViewModel
 
 _AUTO_MODES = ("Off", "Once", "Continuous")
@@ -50,7 +53,8 @@ class CameraControlsWidget(QWidget):
         self._refresh_button = QPushButton("Refresh")
         self._connect_button = QPushButton("Connect")
         self._disconnect_button = QPushButton("Disconnect")
-        self._status_label = QLabel("Not connected")
+        self._status_label = QLabel(status_dot_html(COLOR_RED, "Not connected"))
+        self._status_label.setTextFormat(Qt.TextFormat.RichText)
 
         self._pixel_format_combo = QComboBox()
 
@@ -241,20 +245,27 @@ class CameraControlsWidget(QWidget):
 
     def _on_connect_clicked(self) -> None:
         info: CameraInfo | None = self._camera_combo.currentData()
+        self._status_label.setText(status_dot_html(COLOR_YELLOW, "Connecting..."))
+        # connect_camera() is a blocking GenICam call; force a repaint now so
+        # the "Connecting..." state is actually visible rather than jumping
+        # straight from "Not connected" to the final result.
+        QApplication.processEvents()
         self._view_model.connect_camera(serial_number=info.serial_number if info else None)
 
     def _on_connected(self, info: CameraInfo) -> None:
-        self._status_label.setText(f"Connected: {info.model_name} ({info.serial_number})")
+        self._status_label.setText(
+            status_dot_html(COLOR_GREEN, f"Connected: {info.model_name} ({info.serial_number})")
+        )
         self._set_settings_enabled(True)
         self._populate_choices()
         self._refresh_current_values()
 
     def _on_disconnected(self) -> None:
-        self._status_label.setText("Not connected")
+        self._status_label.setText(status_dot_html(COLOR_RED, "Not connected"))
         self._set_settings_enabled(False)
 
     def _on_error(self, message: str) -> None:
-        self._status_label.setText(f"Error: {message}")
+        self._status_label.setText(status_dot_html(COLOR_RED, f"Error: {message}"))
 
     def _populate_choices(self) -> None:
         camera = self._view_model.camera

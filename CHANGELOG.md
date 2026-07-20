@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-07-17
+
+The live preview now dominates the main window, matching the imaging-
+software convention (pylon Viewer, ImageJ, Micro-Manager, NIS-Elements,
+ZEN) instead of competing for space with a wall of equally-sized side
+panels, and shows a proper empty state instead of a blank rectangle
+before a camera is connected.
+
+### Added
+
+- `LivePreviewWidget` now shows an empty state -- a camera icon, "No
+  Camera Connected", "Click Connect to begin acquisition." -- until the
+  first frame arrives (or again after a disconnect, via the new
+  `reset()` method the main window calls), instead of a black rectangle.
+- `MainWindow`'s default (first-launch) layout: window defaults to
+  1600x1000; Experiment Metadata and Hardware Status are tabified behind
+  Recording Controls, and Dataset Browser and Log Console are tabified
+  behind Analysis, instead of each dock claiming its own strip of space;
+  the bottom dock group gets a permanent height cap
+  (`_BOTTOM_DOCK_MAX_HEIGHT = 260`) so it can never grow to compete with
+  the preview. Together this gives the preview roughly 60% of the
+  window's width and 65-70% of its height by default. A user's own saved
+  layout (from `QSettings`) is never overridden by the default sizing --
+  only fresh installs get it.
+
+### Fixed
+
+- `QMainWindow.resizeDocks()` silently no-ops if called before the
+  window has ever been shown (and can't relate a dock's size to the
+  central widget at all, only to sibling docks) -- the default left/
+  right dock widths are now applied from a `showEvent` override, and the
+  bottom group uses a permanent height cap instead, since that's the one
+  technique that reliably holds up across window resizes.
+
+## [3.1.0] - 2026-07-17
+
+More visual status indicators in the desktop GUI, replacing plain-text
+status readouts with colored indicators graphical enough to read at a
+glance. `glas.gui.status_indicators` is the new shared module every
+widget draws colors and gauge thresholds from, so a red dot or a red
+gauge always means the same thing everywhere it appears.
+
+### Added
+
+- `glas.gui.status_indicators` (new module): `status_dot_html(color, text)`
+  builds a colored-dot rich-text label (green/red/amber/gray);
+  `resource_bar_color(percent)` and `update_resource_bar(bar, percent,
+  display_text)` color-code a `QProgressBar` by how full it is (green
+  below 70%, amber 70-90%, red at 90%+), with a custom display string
+  instead of Qt's default `"NN%"`.
+- `CameraControlsWidget`'s connection status is now a colored dot (🔴 Not
+  connected, 🟡 Connecting..., 🟢 Connected, 🔴 Error) instead of plain
+  text, including a genuine (if brief, since `connect_camera()` is
+  synchronous) "Connecting..." state shown before the blocking GenICam
+  call.
+- `RecordingControlsWidget`'s recording indicator (already a "●" glyph)
+  is now colored: gray Idle, red Recording, amber Paused, red Error.
+- `HardwareStatusWidget`: camera connection and recorder status are
+  colored dots; each "Other Devices" entry gets its own connected/
+  disconnected dot; USB bandwidth, buffer occupancy, memory usage, CPU
+  usage, and storage remaining are now color-coded `QProgressBar` gauges
+  (e.g. `"14/256 (5%)"`, `"3200 MB (42%)"`) instead of plain `QLabel`
+  text, so a lab operator sees graphical fill level and color at a
+  glance instead of reading `"N/A"` or a bare percentage.
+
 ## [3.0.1] - 2026-07-17
 
 A full Phase 1-20 reproducibility audit found that `DatasetMetadata` did not

@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QApplication
 
 from glas.controller import RecorderController
 from glas.experiment import NAME_KEY, TAGS_KEY
+from glas.gui.status_indicators import COLOR_GRAY, COLOR_RED, COLOR_YELLOW
 from glas.gui.viewmodels.recording_viewmodel import RecordingViewModel
 from glas.gui.widgets.recording_controls_widget import (
     RecordingControlsWidget,
@@ -90,7 +91,8 @@ class TestStartStop:
     ) -> None:
         with qtbot.waitSignal(widget._view_model.recording_started, timeout=15000):
             widget._on_start_clicked()
-        assert widget._recording_indicator.text() == "● RECORDING"
+        assert "RECORDING" in widget._recording_indicator.text()
+        assert COLOR_RED in widget._recording_indicator.text()
         assert widget._start_button.isEnabled() is False
         assert widget._stop_button.isEnabled() is True
         widget._view_model.stop_recording()
@@ -101,7 +103,8 @@ class TestStartStop:
         widget._on_start_clicked()
         with qtbot.waitSignal(widget._view_model.recording_stopped, timeout=15000):
             widget._view_model.stop_recording()
-        assert widget._recording_indicator.text() == "● IDLE"
+        assert "IDLE" in widget._recording_indicator.text()
+        assert COLOR_GRAY in widget._recording_indicator.text()
         assert widget._start_button.isEnabled() is True
         assert widget._stop_button.isEnabled() is False
 
@@ -120,7 +123,8 @@ class TestPauseResume:
         widget._on_start_clicked()
         with qtbot.waitSignal(widget._view_model.recording_paused, timeout=15000):
             widget._pause_button.click()
-        assert widget._recording_indicator.text() == "● PAUSED"
+        assert "PAUSED" in widget._recording_indicator.text()
+        assert COLOR_YELLOW in widget._recording_indicator.text()
         assert widget._pause_button.isEnabled() is False
         assert widget._resume_button.isEnabled() is True
         widget._view_model.stop_recording()
@@ -132,7 +136,8 @@ class TestPauseResume:
         widget._pause_button.click()
         with qtbot.waitSignal(widget._view_model.recording_resumed, timeout=15000):
             widget._resume_button.click()
-        assert widget._recording_indicator.text() == "● RECORDING"
+        assert "RECORDING" in widget._recording_indicator.text()
+        assert COLOR_RED in widget._recording_indicator.text()
         widget._view_model.stop_recording()
 
 
@@ -154,7 +159,8 @@ class TestAutoStopTargets:
         widget._duration_spin.setValue(0.3)
         with qtbot.waitSignal(widget._view_model.recording_stopped, timeout=15000):
             widget._on_start_clicked()
-        assert widget._recording_indicator.text() == "● IDLE"
+        assert "IDLE" in widget._recording_indicator.text()
+        assert COLOR_GRAY in widget._recording_indicator.text()
 
 
 class TestNameAndTags:

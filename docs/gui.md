@@ -37,7 +37,7 @@ install hint rather than making `import glas.cli` itself require Qt.
 ## Launching the GUI
 
 ```bash
-pip install -e ".[gui,ai]"
+pip install glas[gui]
 glas gui ~/glas_data
 ```
 
@@ -46,12 +46,24 @@ the GUI's only required argument, matching `glas record BASE_DIR`.
 
 ## Layout
 
-The main window's central widget is the live camera preview -- the
-largest panel, per the design brief. Every other panel is a dockable,
-movable, resizable `QDockWidget`, arranged around it by default but
-freely rearrangeable; the arrangement (and dark-mode setting) persists
-across sessions via `QSettings` and can be reset from **View → Reset
-Layout**.
+The main window's central widget is the live camera preview, and by
+design it dominates the window -- the imaging-software convention set by
+pylon Viewer, ImageJ, Micro-Manager, NIS-Elements, and ZEN, where the
+image is the primary focus and everything else is a narrow tool panel
+around it. On a first launch the window defaults to 1600x1000 with the
+preview claiming roughly 60% of the width and 65-70% of the height:
+panels that are only glanced at occasionally (Experiment Metadata,
+Hardware Status; Dataset Browser, Log Console) are tabified behind the
+one most relevant during live operation (Recording Controls; Analysis)
+rather than each claiming their own strip of space, and the bottom dock
+group has a permanent height cap so it can never grow to compete with
+the preview. Every panel is still a dockable, movable, resizable,
+floatable `QDockWidget` -- reachable via its tab, `View`, or a drag to
+float it -- and the *arrangement* (which panels are where, docked or
+floating) is exactly as free as before; only the bottom group's maximum
+height and the very first launch's default proportions are fixed. The
+arrangement (and dark-mode setting) persists across sessions via
+`QSettings` and can be reset from **View → Reset Layout**.
 
 ### Live Preview (`LivePreviewWidget`)
 
@@ -62,7 +74,11 @@ viewport zoom/pan/fit-to-window/100% (a pure display transform, distinct
 from `Preview.zoom`'s server-side crop); toolbar toggles switch between
 Pan, Crosshair (click to place), and Select ROI (drag) interaction
 modes, plus independent Grid and Timestamp overlay toggles. Frame
-counter, FPS, and a live histogram sit below the view.
+counter, FPS, and a live histogram sit below the view. Before a camera
+has ever sent a frame (and again after a disconnect), the view area
+shows an empty state -- a camera icon, "No Camera Connected", and "Click
+Connect to begin acquisition." -- instead of a blank rectangle; it's
+replaced by the live image the moment the first frame arrives.
 
 ### Camera Controls (`CameraControlsWidget`)
 
@@ -77,7 +93,9 @@ connected. "Test image mode" is a visible but permanently disabled
 control with an explanatory tooltip: no GenICam `TestPattern` node is
 exposed by the target hardware/emulator, and a control that looked
 functional but silently did nothing would be worse than one that says
-so.
+so. The connection status is a colored dot (🔴 Not connected, 🟡
+Connecting..., 🟢 Connected, 🔴 Error) rather than plain text -- see
+[Status indicators and resource gauges](#status-indicators-and-resource-gauges).
 
 ### Recording Controls (`RecordingControlsWidget`)
 
@@ -86,8 +104,9 @@ frame count (implemented the same way the CLI's own `glas record
 --duration` implements it -- polling and stopping once a target is
 reached, not a new `RecorderController` mode), output folder, a name/
 tags/notes identification block, a progress bar, live disk-free space,
-an estimated-remaining-recording-time readout, a recording indicator,
-and a dropped-frame counter.
+an estimated-remaining-recording-time readout, a colored recording
+indicator (gray ● Idle, red ● Recording, amber ● Paused), and a
+dropped-frame counter.
 
 ### Experiment Metadata (`ExperimentMetadataWidget`)
 
@@ -99,14 +118,37 @@ the Recording Controls panel rather than being duplicated here.
 
 ### Hardware Status (`HardwareStatusWidget`)
 
-Camera connection, USB link speed, temperature (if the device exposes
-one), live frame rate, exposure, gain, synchronization mode, ring buffer
-occupancy, memory/CPU usage, storage remaining, and recorder state. An
-"Other Devices" section renders whatever
+Camera connection (colored dot), USB link speed, temperature (if the
+device exposes one), live frame rate, exposure, gain, synchronization
+mode, ring buffer occupancy, memory/CPU usage, storage remaining, and
+recorder state (colored dot). USB bandwidth, buffer occupancy, memory,
+CPU, and storage are rendered as color-coded `QProgressBar` gauges
+(green/amber/red by how full they are) rather than plain text -- see
+[Status indicators and resource gauges](#status-indicators-and-resource-gauges)
+below. An "Other Devices" section renders whatever
 `HardwareStatusViewModel.register_device()` has been told about -- a
 future LabJack, NI DAQ, accelerometer, function generator, amplifier, or
-environmental sensor integration appears here automatically, with no
-changes to this widget.
+environmental sensor integration appears here automatically (each with
+its own colored connected/disconnected dot), with no changes to this
+widget.
+
+### Status indicators and resource gauges
+
+`glas.gui.status_indicators` is the one place colors and thresholds for
+every status dot and resource gauge in the application are defined, so a
+red dot always means the same thing everywhere it appears:
+
+- `status_dot_html(color, text)` builds the rich text (`● text`, colored)
+  used for every connection/recording/device status label -- green for
+  healthy/connected, red for disconnected/error, amber for a
+  transitional or cautionary state (connecting, paused), gray for idle.
+- `update_resource_bar(bar, percent, display_text)` sets a
+  `QProgressBar`'s fill level, color, and displayed text (e.g.
+  `"14/256 (5%)"` instead of Qt's default `"5%"`) in one call. Colors
+  come from `resource_bar_color()`: green below 70%, amber from 70-90%,
+  red at 90% and above -- the same thresholds for every gauge (USB
+  bandwidth, buffer occupancy, memory, CPU, storage), so a lab operator
+  glancing at the panel reads red as "needs attention" consistently.
 
 ### Analysis (`AnalysisPanelWidget`)
 

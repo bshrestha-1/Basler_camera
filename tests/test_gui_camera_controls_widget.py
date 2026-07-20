@@ -8,6 +8,7 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtWidgets import QApplication
 
+from glas.gui.status_indicators import COLOR_GREEN, COLOR_RED
 from glas.gui.viewmodels.camera_viewmodel import CameraViewModel
 from glas.gui.widgets.camera_controls_widget import CameraControlsWidget
 
@@ -63,7 +64,20 @@ class TestConnectDisconnect:
     def test_disconnect_disables_settings(self, connected_widget: CameraControlsWidget) -> None:
         connected_widget._view_model.disconnect_camera()
         assert connected_widget._exposure_spin.isEnabled() is False
-        assert connected_widget._status_label.text() == "Not connected"
+        assert "Not connected" in connected_widget._status_label.text()
+
+
+class TestStatusIndicatorColors:
+    def test_not_connected_status_is_red(self, widget: CameraControlsWidget) -> None:
+        assert COLOR_RED in widget._status_label.text()
+
+    def test_connected_status_is_green(self, connected_widget: CameraControlsWidget) -> None:
+        assert COLOR_GREEN in connected_widget._status_label.text()
+
+    def test_error_status_is_red(self, connected_widget: CameraControlsWidget, qtbot) -> None:
+        with qtbot.waitSignal(connected_widget._view_model.error_occurred, timeout=2000):
+            connected_widget._view_model.set_exposure_time_us(-1.0)
+        assert COLOR_RED in connected_widget._status_label.text()
 
 
 class TestExposureGainGamma:

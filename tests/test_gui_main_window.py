@@ -12,7 +12,8 @@ from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication
 
 from glas.experiment import get_physical_parameters
-from glas.gui.main_window import MainWindow
+from glas.gui.main_window import _BOTTOM_DOCK_MAX_HEIGHT, MainWindow
+from glas.gui.widgets.live_preview_widget import _EMPTY_STATE_PAGE, _LIVE_VIEW_PAGE
 
 
 @pytest.fixture
@@ -60,6 +61,51 @@ class TestAssembly:
         assert window._recording_status_label.text() == "Recording: idle"
 
 
+class TestDefaultLayout:
+    """The live preview is the primary tool (per the imaging-software
+    convention: pylon Viewer, ImageJ, Micro-Manager, NIS-Elements, ZEN),
+    so it must dominate the default window rather than compete with a
+    wall of equally-sized panels."""
+
+    def test_window_defaults_to_a_wide_size(self, window: MainWindow) -> None:
+        assert window.size().width() >= 1600
+        assert window.size().height() >= 1000
+
+    def test_recording_controls_group_is_tabified(self, window: MainWindow) -> None:
+        tabified = window.tabifiedDockWidgets(window._docks["Recording Controls"])
+        assert window._docks["Experiment Metadata"] in tabified
+        assert window._docks["Hardware Status"] in tabified
+
+    def test_recording_controls_is_the_visible_tab_by_default(
+        self, window: MainWindow, qtbot
+    ) -> None:
+        window.show()
+        qtbot.waitExposed(window)
+        assert window._docks["Recording Controls"].isVisible() is True
+
+    def test_bottom_group_is_tabified(self, window: MainWindow) -> None:
+        tabified = window.tabifiedDockWidgets(window._docks["Analysis"])
+        assert window._docks["Dataset Browser"] in tabified
+        assert window._docks["Log Console"] in tabified
+
+    def test_camera_controls_is_not_tabified_with_anything(self, window: MainWindow) -> None:
+        assert window.tabifiedDockWidgets(window._docks["Camera Controls"]) == []
+
+    def test_bottom_group_height_is_capped(self, window: MainWindow) -> None:
+        for name in ("Analysis", "Dataset Browser", "Log Console"):
+            assert window._docks[name].maximumHeight() == _BOTTOM_DOCK_MAX_HEIGHT
+
+    def test_preview_dominates_the_default_window(self, window: MainWindow, qtbot) -> None:
+        window.show()
+        qtbot.waitExposed(window)
+        for _ in range(10):
+            qtbot.wait(20)
+        preview = window._live_preview_widget.size()
+        total = window.size()
+        assert preview.width() / total.width() > 0.5
+        assert preview.height() / total.height() > 0.5
+
+
 class TestCameraLifecycle:
     def test_connect_starts_preview_acquisition(self, window: MainWindow, qtbot) -> None:
         with qtbot.waitSignal(window._camera_vm.connected, timeout=5000):
@@ -77,6 +123,19 @@ class TestCameraLifecycle:
         assert window._preview_acquisition is None
         assert window._live_feed_vm.is_attached is False
         assert window._camera_status_label.text() == "Camera: disconnected"
+
+    def test_connect_shows_live_view_disconnect_shows_empty_state(
+        self, window: MainWindow, qtbot
+    ) -> None:
+        with qtbot.waitSignal(window._camera_vm.connected, timeout=5000):
+            window._camera_vm.connect_camera()
+        with qtbot.waitSignal(window._live_feed_vm.frame_ready, timeout=5000):
+            pass
+        assert window._live_preview_widget._view_stack.currentIndex() == _LIVE_VIEW_PAGE
+
+        with qtbot.waitSignal(window._camera_vm.disconnected, timeout=5000):
+            window._disconnect_camera()
+        assert window._live_preview_widget._view_stack.currentIndex() == _EMPTY_STATE_PAGE
 
 
 class TestRecordingLifecycle:
