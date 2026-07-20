@@ -1,5 +1,6 @@
 # GLAS — Granular Lab Acquisition System
 
+
 GLAS is a production-quality acquisition and analysis platform for a
 **Basler ace acA640-750um** camera, built for granular-material physics
 research (Brazil nut effect, convection, packing fraction, segregation,
@@ -21,6 +22,14 @@ data, a generic multi-run parameter-sweep comparison engine
 or [`CHANGELOG.md`](CHANGELOG.md) for details.
 
 ## Installation
+```bash-install miniforge3
+curl -LO https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-MacOSX-arm64.sh
+bash Miniforge3-MacOSX-arm64.sh
+~/miniforge3/bin/conda init zsh (if using zsh) or ~/miniforge3/bin/conda init bash (if using bash)
+Restart the terminal and 
+conda info --base
+you should see /Users/*/miniforge3
+```
 
 ```bash
 git clone https://github.com/bshrestha-1/basler_camera.git
@@ -48,9 +57,11 @@ For development (tests, linting, type checking):
 pip install -e ".[dev]"
 ```
 
-```bash
+```bash-Create a fresh environment
+conda create -n glas311 python=3.11
 conda activate glas311
 ```
+
 
 ## Quickstart
 
@@ -113,7 +124,7 @@ glas qa ~/glas_data/Run0001 --expected-fps 30
 
 # Compare a metric across many recordings, with real statistical uncertainty
 glas compare ~/glas_data --parameter target-acceleration-g \
-    --metric brazil-nut-rise-time --tag brazil-nut --plot sweep.png
+--metric brazil-nut-rise-time --tag brazil-nut --plot sweep.png
 
 # Generate a self-contained, publication-ready HTML report for one recording
 glas report ~/glas_data/Run0001 report.html
@@ -146,13 +157,13 @@ from glas.camera import Camera
 from glas.camera_validator import ROI
 
 with Camera() as camera:
-    info = camera.get_info()
-    print(f"Connected to {info.model_name} (serial {info.serial_number})")
+info = camera.get_info()
+print(f"Connected to {info.model_name} (serial {info.serial_number})")
 
-    camera.exposure_time_us = 5000.0
-    camera.gain_db = 6.0
-    camera.roi = ROI(width=640, height=480, offset_x=0, offset_y=0)
-    camera.pixel_format = "Mono8"
+camera.exposure_time_us = 5000.0
+camera.gain_db = 6.0
+camera.roi = ROI(width=640, height=480, offset_x=0, offset_y=0)
+camera.pixel_format = "Mono8"
 ```
 
 `Camera` requires [pypylon](https://github.com/basler/pypylon) (installed
@@ -169,14 +180,14 @@ from glas.camera import Camera
 from glas.acquisition import Acquisition
 
 with Camera() as camera:
-    acquisition = Acquisition(camera, buffer_capacity=256)
-    acquisition.start()
-    time.sleep(2.0)
-    acquisition.stop()
+acquisition = Acquisition(camera, buffer_capacity=256)
+acquisition.start()
+time.sleep(2.0)
+acquisition.stop()
 
-    print(acquisition.stats())
-    frame = acquisition.buffer.pop(timeout=0)
-    print(frame.frame_id, frame.image.shape)
+print(acquisition.stats())
+frame = acquisition.buffer.pop(timeout=0)
+print(frame.frame_id, frame.image.shape)
 ```
 
 See [`docs/acquisition.md`](docs/acquisition.md) for the ring buffer's
@@ -195,30 +206,30 @@ from glas.metadata import DatasetMetadata
 from glas.writer import DatasetWriter
 
 with Camera() as camera:
-    info = camera.get_info()
-    folder = create_experiment_folder(Path("~/glas_data").expanduser())
-    # DatasetMetadata.dataset_format only accepts a concrete "hdf5" or
-    # "raw_binary" (it validates on construction); resolve "auto" first.
-    dataset_format = resolve_dataset_format("auto")
-    metadata = DatasetMetadata(
-        dataset_format=dataset_format,
-        camera_model=info.model_name,
-        camera_serial=info.serial_number,
-        pixel_format=camera.pixel_format,
-        width=camera.roi.width,
-        height=camera.roi.height,
-        created_at_utc="2026-07-13T12:00:00+00:00",
-    )
-    dataset = Dataset.create(folder, metadata, dataset_format=dataset_format)
+info = camera.get_info()
+folder = create_experiment_folder(Path("~/glas_data").expanduser())
+# DatasetMetadata.dataset_format only accepts a concrete "hdf5" or
+# "raw_binary" (it validates on construction); resolve "auto" first.
+dataset_format = resolve_dataset_format("auto")
+metadata = DatasetMetadata(
+dataset_format=dataset_format,
+camera_model=info.model_name,
+camera_serial=info.serial_number,
+pixel_format=camera.pixel_format,
+width=camera.roi.width,
+height=camera.roi.height,
+created_at_utc="2026-07-13T12:00:00+00:00",
+)
+dataset = Dataset.create(folder, metadata, dataset_format=dataset_format)
 
-    acquisition = Acquisition(camera, buffer_capacity=256)
-    writer = DatasetWriter(acquisition.buffer, dataset)
+acquisition = Acquisition(camera, buffer_capacity=256)
+writer = DatasetWriter(acquisition.buffer, dataset)
 
-    writer.start()
-    acquisition.start()
-    time.sleep(10.0)
-    acquisition.stop()
-    writer.stop()  # drains the buffer, then finalizes the dataset
+writer.start()
+acquisition.start()
+time.sleep(10.0)
+acquisition.stop()
+writer.stop()  # drains the buffer, then finalizes the dataset
 ```
 
 `Dataset` requires [h5py](https://www.h5py.org/) (installed automatically
@@ -240,13 +251,13 @@ controller = RecorderController(Path("~/glas_data").expanduser())
 controller.connect()
 
 with controller.graceful_shutdown() as shutdown:
-    controller.start_recording(
-        notes="shaker at 60 Hz, 4g", name="shaker sweep", tags=["brazil-nut", "60hz"]
-    )
-    while not shutdown.is_set():
-        time.sleep(0.1)
-        progress = controller.progress()
-        print(f"\r{progress.frame_count} frames, {progress.elapsed_seconds:.1f}s", end="")
+controller.start_recording(
+notes="shaker at 60 Hz, 4g", name="shaker sweep", tags=["brazil-nut", "60hz"]
+)
+while not shutdown.is_set():
+time.sleep(0.1)
+progress = controller.progress()
+print(f"\r{progress.frame_count} frames, {progress.elapsed_seconds:.1f}s", end="")
 
 controller.disconnect()
 ```
@@ -293,14 +304,14 @@ from glas.monitor import PerformanceMonitor
 monitor = PerformanceMonitor(recorder.buffer, data_dir=recorder.dataset.folder)
 
 while recording:
-    snapshot = monitor.sample()
-    print(
-        f"\r{snapshot.fps:.1f} fps | buffer {snapshot.buffer_occupancy_percent:.0f}% | "
-        f"dropped {snapshot.dropped_frame_count} | cpu {snapshot.cpu_percent:.0f}% | "
-        f"disk free {snapshot.disk_free_gb:.1f} GB",
-        end="",
-    )
-    time.sleep(1.0)
+snapshot = monitor.sample()
+print(
+f"\r{snapshot.fps:.1f} fps | buffer {snapshot.buffer_occupancy_percent:.0f}% | "
+f"dropped {snapshot.dropped_frame_count} | cpu {snapshot.cpu_percent:.0f}% | "
+f"disk free {snapshot.disk_free_gb:.1f} GB",
+end="",
+)
+time.sleep(1.0)
 ```
 
 Like `Preview`, `PerformanceMonitor` only ever reads a `RingBuffer`'s
@@ -323,8 +334,8 @@ export_dataset(dataset.folder, Path("frames_tiff"), format="tiff")
 
 # Just a clip, frames 100-199, as a GIF:
 export_dataset(
-    dataset.folder, Path("clip.gif"), format="gif", fps=15.0,
-    start_frame=100, end_frame=200,
+dataset.folder, Path("clip.gif"), format="gif", fps=15.0,
+start_frame=100, end_frame=200,
 )
 ```
 
@@ -344,7 +355,7 @@ from glas.experiment import ExperimentManager
 
 manager = ExperimentManager(Path("~/glas_data").expanduser())
 for summary in manager.search_experiments(tag="brazil-nut"):
-    print(summary.run_id, summary.name, summary.frame_count)
+print(summary.run_id, summary.name, summary.frame_count)
 
 one = manager.get_experiment("Run0001")
 ```
@@ -367,7 +378,7 @@ from glas.analysis import track_dataset
 
 history = track_dataset(dataset.folder, max_distance=20.0)
 for track_id, observations in history.items():
-    print(f"track {track_id}: {len(observations)} frames")
+print(f"track {track_id}: {len(observations)} frames")
 ```
 
 or from the command line:
@@ -419,7 +430,7 @@ from glas.analysis import analyze_convection
 
 summary = analyze_convection(dataset.folder, heatmap_dir=Path("flow_maps"))
 for frame_id, circulation in zip(summary.frame_ids, summary.circulations):
-    print(frame_id, circulation)
+print(frame_id, circulation)
 ```
 
 or from the command line:
@@ -445,7 +456,7 @@ from glas.analysis import analyze_packing
 
 summary = analyze_packing(dataset.folder, field_grid_spacing=32, field_dir=Path("packing_maps"))
 for frame_id, metrics in zip(summary.frame_ids, summary.metrics):
-    print(frame_id, metrics.packing_fraction, metrics.void_fraction)
+print(frame_id, metrics.packing_fraction, metrics.void_fraction)
 ```
 
 or from the command line:
@@ -471,7 +482,7 @@ from glas.analysis import analyze_segregation
 
 summary = analyze_segregation(dataset.folder, plot_path=Path("segregation.png"))
 for frame_id, metrics in zip(summary.frame_ids, summary.metrics):
-    print(frame_id, metrics.segregation_index, metrics.mixing_entropy)
+print(frame_id, metrics.segregation_index, metrics.mixing_entropy)
 ```
 
 or from the command line:
@@ -570,8 +581,8 @@ from glas.dataset import iter_frames
 
 history = track_dataset_yolo(dataset.folder, "glass_beads.pt")
 for track_id, observations in history.items():
-    last = observations[-1]
-    print(track_id, last.label, last.confidence, last.is_intruder)
+last = observations[-1]
+print(track_id, last.label, last.confidence, last.is_intruder)
 
 last_frame = list(iter_frames(dataset.folder))[-1]
 segmenter = Sam2Segmenter(model_id="facebook/sam2.1-hiera-large")
@@ -617,10 +628,10 @@ print(report.is_clean, report.warnings)
 
 manager = ExperimentManager(dataset.folder.parent)
 result = compare_runs(
-    manager.search_experiments(tag="brazil-nut"),
-    parameter_fn=lambda md: get_physical_parameters(md).target_acceleration_g,
-    metric_fn=lambda folder: analyze_brazil_nut(folder).rise_time_s,
-    parameter_name="Gamma", metric_name="Rise time (s)",
+manager.search_experiments(tag="brazil-nut"),
+parameter_fn=lambda md: get_physical_parameters(md).target_acceleration_g,
+metric_fn=lambda folder: analyze_brazil_nut(folder).rise_time_s,
+parameter_name="Gamma", metric_name="Rise time (s)",
 )
 plot_parameter_sweep(result, Path("sweep.pdf"))
 
@@ -648,13 +659,13 @@ and [`docs/publishing.md`](docs/publishing.md) for the full design.
 
 ```
 src/glas/          Package source (import glas)
-  ai/                Optional: YOLO detection, SAM2 segmentation (pip install glas[ai])
-  gui/               Optional: PySide6/Qt6 desktop GUI (pip install glas[gui])
-  calibration.py     Spatial (px -> mm) calibration
-  qa.py              Preflight checks, post-recording quality assessment
-  plotting.py        Shared publication-quality plot styling
-  stats.py           Descriptive statistics, linear regression
-  report.py          Self-contained HTML experiment reports
+ai/                Optional: YOLO detection, SAM2 segmentation (pip install glas[ai])
+gui/               Optional: PySide6/Qt6 desktop GUI (pip install glas[gui])
+calibration.py     Spatial (px -> mm) calibration
+qa.py              Preflight checks, post-recording quality assessment
+plotting.py        Shared publication-quality plot styling
+stats.py           Descriptive statistics, linear regression
+report.py          Self-contained HTML experiment reports
 tests/              pytest unit tests (one file per module)
 docs/               Documentation
 pyproject.toml      Packaging, dependencies, tool configuration
